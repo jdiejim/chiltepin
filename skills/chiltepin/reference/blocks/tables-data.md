@@ -57,4 +57,6 @@ table; when the change is the point, `kind: compare` or `kind: diff`.
 `highlight: "3-5, 8"` bands the lines that matter; `lines: true` numbers
 them; `cols: 2` sets snippets side by side (request / response); `kind:
 compare` is before / after under eyebrows; `kind: terminal` is a `session`.
+`lang: text` for prompts and plain notes (no highlighting); `lang: markdown`
+for Markdown source.
 `steps` for a runbook with prose between commands; `gallery` for a card grid.

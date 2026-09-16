@@ -46,4 +46,15 @@ describe('highlightCode lang=markdown', () => {
     expect(html).not.toContain('<i>');
     expect(html).not.toContain('<u>');
   });
+
+  it('lang: text (and plain / prompt) gets no token spans at all', () => {
+    const prompt = 'Role: Act as a reviewer.\n- Start with: [files]. Do not delete this block for now.';
+    for (const lang of ['text', 'plain', 'plaintext', 'prompt']) {
+      const out = highlightCode(prompt, lang);
+      expect(out).not.toContain('<span');
+      expect(out).toContain('Do not delete this block for now.');
+    }
+    // and without a plain label the same words are still highlighted as code
+    expect(highlightCode(prompt, 'js')).toContain('<span class="kw">');
+  });
 });

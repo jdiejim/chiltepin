@@ -38,6 +38,13 @@ const TOKEN_RE =
 const MD_LANGS = new Set(['md', 'markdown', 'mdx']);
 
 /**
+ * `lang` labels that mean "this is not code": prompts, transcripts, plain
+ * notes. They get no token pass at all — the generic keyword set would paint
+ * ordinary English ("for", "or", "not", "with", "delete") as syntax.
+ */
+const PLAIN_LANGS = new Set(['text', 'txt', 'plain', 'plaintext', 'prompt', 'none']);
+
+/**
  * Highlights a code snippet, returning HTML-safe string.
  *
  * @param code - Source code (any language). HTML-escaped before token wrapping.
@@ -47,8 +54,12 @@ const MD_LANGS = new Set(['md', 'markdown', 'mdx']);
  */
 export function highlightCode(code: string, lang?: string): string {
   if (code.length === 0) return '';
-  if (lang !== undefined && MD_LANGS.has(lang.trim().toLowerCase())) {
+  const label = lang?.trim().toLowerCase();
+  if (label !== undefined && MD_LANGS.has(label)) {
     return highlightMarkdown(String(code));
+  }
+  if (label !== undefined && PLAIN_LANGS.has(label)) {
+    return escapeHtml(String(code));
   }
   const src = String(code);
   let out = '';
