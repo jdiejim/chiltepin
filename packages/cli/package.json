@@ -1,6 +1,6 @@
 {
   "name": "chiltepin",
-  "version": "0.47.7",
+  "version": "0.47.8",
   "description": "Documentation-as-code CLI: write Markdown with typed YAML blocks for API docs, architecture & system design (C4, ERDs, sequence diagrams), frontend & design systems, ADRs and decision records, planning, and slide presentations. Validate like code with `chiltepin check`, export to HTML, slides, or PDF. AI-native — one-command agent skill (npx skills add jdiejim/chiltepin -y) and a visual Studio.",
   "license": "MIT",
   "type": "module",

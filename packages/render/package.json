@@ -1,6 +1,6 @@
 {
   "name": "chiltepin-render",
-  "version": "0.33.3",
+  "version": "0.34.0",
   "description": "Render Chiltepin documentation-as-code (Markdown + typed YAML blocks) to standalone HTML, slide decks, and PDF — architecture & system-design diagrams, C4, ERDs, API references, tables, and charts as self-contained SVG. No runtime, no CDN, no client JS.",
   "license": "MIT",
   "type": "module",
