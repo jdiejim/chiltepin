@@ -1,5 +1,13 @@
 # chiltepin
 
+## 0.47.9
+
+### Patch Changes
+
+- Updated dependencies [eda853c]
+  - chiltepin-render@0.34.1
+  - chiltepin-studio@0.16.5
+
 ## 0.47.8
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # chiltepin-render
 
+## 0.34.1
+
+### Patch Changes
+
+- eda853c: `flow` nodes of kind `agent` and `llm` draw as the agent card: the sparkle mark, the name, and the second label line as a mono model chip.
+
 ## 0.34.0
 
 ### Minor Changes
