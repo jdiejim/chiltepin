@@ -324,3 +324,26 @@
   acceptable: [sequence, state]
   wrong: [agentloop, steps, table]
 
+# ── Added 2026-09-16: a table with a job is not a `table`.
+
+- id: release-list
+  family: planning
+  request: List what shipped in the last three releases, with the breaking changes called out.
+  expected: [changelog]
+  acceptable: [timeline]
+  wrong: [table, list, prose]
+
+- id: component-maturity
+  family: design-system
+  request: Show the shared component library — which components are stable, beta, deprecated, or planned, and what to use instead.
+  expected: [inventory]
+  acceptable: [statustable]
+  wrong: [table, list, tree]
+
+- id: domain-terms
+  family: narrative
+  request: Define the eight terms new engineers keep mixing up in the billing domain.
+  expected: [glossary]
+  acceptable: [list]
+  wrong: [table, prose, faq]
+

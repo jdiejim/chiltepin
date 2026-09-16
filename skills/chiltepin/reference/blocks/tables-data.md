@@ -9,13 +9,18 @@ Structure & emphasis for headline numbers, targets, and code as evidence
 (`stats`, `slo`, `code`).
 **Answers**: What are the exact values? How big, fast, or reliable is it,
 as measured?
-**Not this family**:
+**Not this family** — a table with a job has its own block:
 
 - cells are permission levels → `matrix` (business.md)
 - a value grid read by intensity → `heatmap` (charts-overviews.md)
 - the numbers move over time → `chart` (charts-overviews.md)
 - scores you invented rather than measured → `scorecard` or `harvey`
   (business.md)
+- a status per row → `statustable` (planning.md); components with a
+  maturity → `inventory` (design-system.md)
+- term — definition → `glossary`; releases → `changelog`; findings with
+  evidence → `audit`; a standard applied → `checklist` (quality.md)
+- touchpoints per stage → `journey`; API params / responses → `endpoint`
 
 ### Tables & metrics
 

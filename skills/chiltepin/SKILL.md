@@ -92,6 +92,7 @@ content. Rewrite the whole document only when the user requests a rewrite.
 | What is this made of? | `anatomy` · `composition` · `erd` · `layers` | labeled parts of a string → anatomy; proportions → composition |
 | What causes this? | `fishbone` · `matrix` | one effect, branching causes → fishbone |
 | Why did we decide this? | `options` · `proscons` · `scqa` · `takeaways` · `callout` | the ADR shape → `reference/recipes.md`; the decision alone → callout |
+| Is it a table, or a table with a job? | `table` · `statustable` · `matrix` · `heatmap` · `benchmark` · `scorecard` · `glossary` · `changelog` · `inventory` · `audit` · `checklist` · `journey` | `table` only when every cell is a plain fact. A status per row → statustable; two axes with a mark or permission → matrix; a value grid read by intensity → heatmap; measured numbers compared → benchmark; scores you gave → scorecard; term — definition → glossary; releases → changelog; components with a maturity → inventory; findings with evidence → audit; a standard applied → checklist; touchpoints per stage → journey; API params → endpoint |
 | What does the API accept and return? | `endpoint` · `code` · `packet` · `table` | HTTP surface → endpoint; wire format → packet; error codes → table |
 | How does the AI workflow run end to end? | `flow` · `swimlane` · `block` · `cycle` · `sequence` | agents, models, tools, humans and memory as `flow` nodes with `kind: agent / llm / tool / human / memory` — a RAG pipeline, a router, a multi-agent hand-off, a generate-check-repair loop; several owners per step → swimlane; the deployment around it → block; an improve-and-re-evaluate loop → cycle; one turn's timing → sequence. Draw the workflow the request describes; `agentloop` is only the fixed single-agent frame |
 | How does one agent's loop behave? | `agentloop` · `trace` · `prompt` · `context` | the loop → agentloop; one real run → trace; the contract → prompt; window contents → context |
@@ -140,6 +141,9 @@ existing fence only to silence the `W_ALIAS_TYPE` warning.
   `code` block (`kind: compare` for before / after); terms are a
   `glossary`; questions a reader will ask are a `faq`; a runbook is
   `steps`; side-by-side snippets or nested diagrams are a `gallery`.
+  Before writing `table`, read the "table with a job" row: a grid whose
+  rows carry a status, score, definition, release, or finding has its own
+  block, and that block draws the status chips and derived values for you.
 - Diagram data (node names, messages, labels, values) is never trimmed to
   fit. Split a dense diagram into two; `chiltepin check` warns at the caps.
 - Every arrow says what crosses it, as a verb phrase, never "uses". A `c4`
