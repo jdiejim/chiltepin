@@ -1,6 +1,7 @@
 /**
  * Renders a flowchart — decision diamonds, stadium start/end nodes, rectangles
- * for processes, with orthogonal edges.
+ * for processes (with an eyebrow chip for the AI kinds: agent, llm, tool,
+ * human, memory), with orthogonal edges.
  *
  * Skin (`DESIGN.md`): every node is paper with an ink outline; the shape
  * carries the kind. The accent goes to the `end` node(s) that are not error
@@ -22,7 +23,21 @@ import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 import { ensureGrid } from './autoLayout.js';
 
-type Kind = 'start' | 'end' | 'decision' | 'process';
+type Kind = 'start' | 'end' | 'decision' | 'process' | 'agent' | 'llm' | 'tool' | 'human' | 'memory';
+
+/**
+ * AI-workflow kinds draw as steps with an eyebrow chip, so a RAG pipeline or a
+ * multi-agent hand-off reads which step is a model, a tool, a person, or a
+ * store without a legend lookup. `human` is a dashed boundary (a gate outside
+ * the automation); `memory` takes the store fill.
+ */
+const AI_CHIP: Readonly<Partial<Record<Kind, string>>> = {
+  agent: 'AGENT',
+  llm: 'LLM',
+  tool: 'TOOL',
+  human: 'HUMAN',
+  memory: 'MEMORY',
+};
 
 /**
  * Deck build order (`data-reveal`): a topological walk from the `start`
@@ -194,16 +209,22 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
     const accent = accentIds.has(n.id);
-    const stroke = accent ? 'var(--accent)' : kind === 'start' ? 'var(--rule-solid)' : 'var(--ink)';
-    const sw = accent ? 1.5 : kind === 'start' ? 1 : 1.5;
-    const fill = accent ? 'var(--accent-tint)' : kind === 'start' ? 'var(--paper-2)' : 'var(--paper)';
+    const chip = AI_CHIP[kind];
+    const secondary = kind === 'start' || kind === 'memory';
+    const stroke = accent ? 'var(--accent)' : secondary ? 'var(--rule-solid)' : 'var(--ink)';
+    const sw = accent ? 1.5 : secondary ? 1 : 1.5;
+    const fill = accent ? 'var(--accent-tint)' : secondary ? 'var(--paper-2)' : 'var(--paper)';
+    const dash = kind === 'human' ? ' stroke-dasharray="4 3"' : '';
     let shape: string;
     if (kind === 'decision') {
       shape = `<polygon points="${cx},${r.y} ${r.x + r.w},${cy} ${cx},${r.y + r.h} ${r.x},${cy}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`;
     } else if (kind === 'start' || kind === 'end') {
       shape = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="${r.h / 2}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
     } else {
-      shape = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+      shape = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${dash}/>`;
+    }
+    if (chip !== undefined) {
+      shape += `<text x="${r.x + 8}" y="${r.y + 11}" class="blk-chip t-sub">${chip}</text>`;
     }
     // A label with a line break keeps its first line as the name and the
     // rest as a mono sublabel; otherwise the name wraps to two lines.
@@ -213,16 +234,18 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
     const maxChars = kind === 'decision' ? 18 : 20;
     const lines = sub.length > 0 ? wrapText(name, maxChars, 1) : wrapText(name, maxChars, 2);
     const tone = accent ? ' c-accent' : '';
+    // A chip takes the top of the box; the label sits a little lower.
+    const dy = chip !== undefined ? 4 : 0;
     let texts = '';
     if (sub.length > 0) {
       texts =
-        `<text x="${cx}" y="${cy - 1}" class="fc-label t-name${tone}">${escapeHtml(lines[0] ?? name)}</text>` +
-        `<text x="${cx}" y="${cy + 12}" class="fc-sub t-sub" text-anchor="middle">${escapeHtml(sub)}</text>`;
+        `<text x="${cx}" y="${cy - 1 + dy}" class="fc-label t-name${tone}">${escapeHtml(lines[0] ?? name)}</text>` +
+        `<text x="${cx}" y="${cy + 12 + dy}" class="fc-sub t-sub" text-anchor="middle">${escapeHtml(sub)}</text>`;
     } else {
       texts = lines
         .map(
           (ln, j) =>
-            `<text x="${cx}" y="${cy + 4.5 - (lines.length - 1) * 7.5 + j * 15}" class="fc-label t-name${tone}">${escapeHtml(ln)}</text>`,
+            `<text x="${cx}" y="${cy + 4.5 + dy - (lines.length - 1) * 7.5 + j * 15}" class="fc-label t-name${tone}">${escapeHtml(ln)}</text>`,
         )
         .join('');
     }
@@ -238,6 +261,11 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
   if (kindsUsed.has('start')) items.push({ swatch: 'node-fill2', label: 'start' });
   if (kindsUsed.has('process')) items.push({ swatch: 'node', label: 'step' });
   if (kindsUsed.has('decision')) items.push({ swatch: 'node', label: 'decision (diamond)' });
+  if (kindsUsed.has('agent')) items.push({ swatch: 'node', label: 'AGENT · autonomous step' });
+  if (kindsUsed.has('llm')) items.push({ swatch: 'node', label: 'LLM · model call' });
+  if (kindsUsed.has('tool')) items.push({ swatch: 'node', label: 'TOOL · retrieval / API / code' });
+  if (kindsUsed.has('human')) items.push({ swatch: 'node-dashed', label: 'HUMAN · review gate' });
+  if (kindsUsed.has('memory')) items.push({ swatch: 'node-fill2', label: 'MEMORY · store' });
   if (kindsUsed.has('end') && [...accentIds].length < nodes.filter((n) => n.kind === 'end').length) {
     items.push({ swatch: 'node', label: 'exit' });
   }

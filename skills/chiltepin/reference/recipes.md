@@ -48,7 +48,25 @@ window? · What does a real run look like?
 7. `trace` — one real transcript, evidence the loop behaves as drawn.
 8. `callout` — the safety boundary the agent cannot cross.
 
-Rejected: `flow` (the loop is the primitive here, not a branch chart).
+Rejected: `flow` for the loop itself (the loop is the primitive, not a
+branch chart) — but a multi-step AI *workflow* is the next recipe.
+
+## AI workflow (RAG, routing, multi-agent, generate → check → repair)
+
+Reader questions: What are the steps? · Which step is a model, a tool, a
+person, or memory? · Where does it branch, retry, or stop?
+
+1. `meta` — the workflow's name and the outcome it produces.
+2. Prose — the trigger and the stop condition in two sentences.
+3. `flow` — the workflow as the request describes it: `kind: llm` for model
+   calls, `agent` for autonomous steps, `tool` for retrieval / APIs / code,
+   `human` for review gates, `memory` for stores, `decision` for routers and
+   checks, `-x->` for the repair path. Shape it from the ask; never reuse a
+   generic loop.
+4. `swimlane` — instead of `flow` when several agents or teams own steps.
+5. `cycle` — the improve-and-re-evaluate loop, when there is one.
+6. `context` or `envelope` — the budget: tokens per turn, or cost per run.
+7. `callout` — what the workflow must never do on its own.
 
 ## Frontend architecture
 

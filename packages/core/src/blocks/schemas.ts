@@ -632,7 +632,7 @@ const flowNodeSchema = z
     row: gridCoord.optional(),
     w: gridSpan.optional(),
     label: z.string(),
-    kind: z.enum(['start', 'end', 'decision', 'process']).optional(),
+    kind: z.enum(['start', 'end', 'decision', 'process', 'agent', 'llm', 'tool', 'human', 'memory']).optional(),
   })
   .strict();
 const flowEdgeSchema = z

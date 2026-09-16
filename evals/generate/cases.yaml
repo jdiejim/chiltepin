@@ -299,3 +299,28 @@
   expected: [code]
   acceptable: [steps, callout]
   wrong: [flow, sequence, table]
+
+# ── Added 2026-09-16: AI workflows must get their own shape, not the fixed
+# agentloop frame. Requests describe pipelines, routing, and repair loops.
+
+- id: rag-pipeline
+  family: flows
+  request: Show how a support question gets answered — retrieval from our docs, the model, and the human review gate before anything is sent.
+  expected: [flow]
+  acceptable: [swimlane, block, dfd]
+  wrong: [agentloop, table, steps]
+
+- id: triage-handoff
+  family: flows
+  request: Document how the triage agent decides between answering, escalating to the billing agent, and paging a human.
+  expected: [flow, swimlane]
+  acceptable: [block, sequence]
+  wrong: [agentloop, table, prose]
+
+- id: generate-check-repair
+  family: flows
+  request: Explain the loop where the model writes the migration, the checker runs it in a sandbox, and failures go back for repair up to three times.
+  expected: [flow, cycle]
+  acceptable: [sequence, state]
+  wrong: [agentloop, steps, table]
+

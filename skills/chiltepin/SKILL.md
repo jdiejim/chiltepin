@@ -93,7 +93,8 @@ content. Rewrite the whole document only when the user requests a rewrite.
 | What causes this? | `fishbone` · `matrix` | one effect, branching causes → fishbone |
 | Why did we decide this? | `options` · `proscons` · `scqa` · `takeaways` · `callout` | the ADR shape → `reference/recipes.md`; the decision alone → callout |
 | What does the API accept and return? | `endpoint` · `code` · `packet` · `table` | HTTP surface → endpoint; wire format → packet; error codes → table |
-| How does the agent behave? | `agentloop` · `trace` · `prompt` · `context` | the loop → agentloop; one real run → trace; the contract → prompt; window contents → context |
+| How does the AI workflow run end to end? | `flow` · `swimlane` · `block` · `cycle` · `sequence` | agents, models, tools, humans and memory as `flow` nodes with `kind: agent / llm / tool / human / memory` — a RAG pipeline, a router, a multi-agent hand-off, a generate-check-repair loop; several owners per step → swimlane; the deployment around it → block; an improve-and-re-evaluate loop → cycle; one turn's timing → sequence. Draw the workflow the request describes; `agentloop` is only the fixed single-agent frame |
+| How does one agent's loop behave? | `agentloop` · `trace` · `prompt` · `context` | the loop → agentloop; one real run → trace; the contract → prompt; window contents → context |
 | What did the review find, and are we ready? | `audit` · `checklist` · `risk` | defects found with evidence → audit; a standard applied once → checklist; what might go wrong → risk |
 | Are we within budget, and how slow is the tail? | `perfbudget` · `percentiles` · `slo` · `benchmark` | targets with a pass line → perfbudget; p50…p99 per endpoint → percentiles; targets over time → slo |
 | Where can this be attacked? | `threatmodel` · `dfd` · `audit` | STRIDE on a data flow with trust boundaries → threatmodel; the flow alone → dfd |

@@ -11,10 +11,12 @@ the window budget (`context`).
 told? What fills the window? What did a real run look like?
 They compose — the AI / agent recipe in `reference/recipes.md` stacks all
 four.
-**Not this family**: the architecture around the agent (services, queues,
-vector stores) → `block` (architecture.md; `kind: llm` / `agent` gets the
-violet card); one turn's message timing between services → `sequence`
-(flows.md).
+**Not this family**: an AI *workflow* — a RAG pipeline, a router, agents
+handing off, a generate → check → repair loop → `flow` (flows.md) with
+`kind: agent / llm / tool / human / memory`; each ask gets its own shape,
+never the fixed agentloop frame. Several owners per step → `swimlane`; the
+deployment around it → `block` (`kind: llm` / `agent`); an improve-and-
+re-evaluate cycle → `cycle`; one turn's timing → `sequence`.
 
 ### AI & agents
 

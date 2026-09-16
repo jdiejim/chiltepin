@@ -31,13 +31,13 @@ per block; the density check warns past 40 spans. `sequence` for order, not dura
 States on a grid joined by event arrows, plus a transition table. Answers: what
 states can it be in, and what moves it? Give it one `kind: start` state and mark
 `terminal` states. `state`, not `flow`, for one object's discrete modes.
-#### `flow` — flowchart with decisions
-Start, process, decision, and end nodes with labelled edges; `variant: dag`
-frames it as a pipeline. Answers: what happens next, and what if the check
-fails? Flows run across, not down: the main path on `col` 1, 2, 3, branches
-on `row: 2`. Omit `col`/`row` for auto-layout (`dir: TB` works only there).
-A label that starts with no / fail / error / reject renders red. `groups`
-draw dashed zones over cell ranges. `flow`, not `sequence`, for branching.
+#### `flow` — flowchart with decisions, incl. AI workflows
+Start, process, decision, end, and AI nodes (`kind: agent / llm / tool /
+human / memory`, each with its chip); `variant: dag` frames a pipeline.
+Answers: what happens next, what if the check fails, which step is a model,
+a tool, or a person? Main path on `col` 1, 2, 3, branches on `row: 2`; omit
+`col`/`row` for auto-layout. A no / fail / error label renders red. `flow`,
+not `sequence`, for branching; `flow`, not `agentloop`, for AI workflows.
 #### `dfd` — data-flow diagram
 External entities, numbered processes, and stores joined by labelled data
 flows. Answers: where does the data come from, and where does it land?
