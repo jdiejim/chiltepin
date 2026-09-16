@@ -100,7 +100,7 @@ export function examples(): string {
     ...rows,
     '',
     `  ${cyan('chiltepin <file.md>')} ${dim('renders + opens a doc — the fastest preview')}`,
-    `  ${cyan('npx skills add jdiejim/chiltepin -g -y')} ${dim('installs the authoring skill into your AI agent')}`,
+    `  ${cyan('npx skills add jdiejim/chiltepin -y')} ${dim('installs the authoring skill into your AI agent')}`,
     `  ${dim('Docs:')} https://github.com/jdiejim/chiltepin`,
     '',
   ].join('\n');

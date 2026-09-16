@@ -81,7 +81,7 @@ function printInitSummary(result: InitResult): void {
     `Next: ${pc.cyan('chiltepin check')} ${pc.dim('·')} ${pc.cyan('chiltepin docs/getting-started.md')} ${pc.dim('(render + open)')}`,
   );
   console.log(
-    `AI:   ${pc.cyan('npx skills add jdiejim/chiltepin -g -y')} ${pc.dim('installs the authoring skill into Claude Code, Cursor, Codex, and 70+ agents')}`,
+    `AI:   ${pc.cyan('npx skills add jdiejim/chiltepin -y')} ${pc.dim('installs the authoring skill into Claude Code, Cursor, Codex, and 70+ agents')}`,
   );
 }
 

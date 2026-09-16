@@ -96,7 +96,7 @@ rows:
   - ["chiltepin demo [-s]", Render the built-in showcase of every block (-s for slides)]
   - ["chiltepin block [type]", "Every block on one line — or one block's fields, terse forms, and example"]
   - ["chiltepin new <name>", Scaffold a whole doc (adr, runbook, …) or a single block]
-  - ["npx skills add jdiejim/chiltepin -g -y", "Install the authoring skill into your AI agent — Claude Code, Cursor, Codex, and more"]
+  - ["npx skills add jdiejim/chiltepin -y", "Install the authoring skill into your AI agent — Claude Code, Cursor, Codex, and more"]
   - ["chiltepin sync openapi <spec>", Generate an API doc straight from an OpenAPI file]
 ```
 

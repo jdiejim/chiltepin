@@ -59,7 +59,7 @@ charts, planning, business/decisions, design system, algorithms, AI/agents).
 - `chiltepin-studio` — web canvas/editor bundling core + render.
 - Authoring skill (`skills/chiltepin/SKILL.md` + reference files, one
   copy in the repo) — teaches an agent to author docs. It installs into any agent
-  with `npx skills add jdiejim/chiltepin -g -y`; the CLI build copies it into the package
+  with `npx skills add jdiejim/chiltepin -y`; the CLI build copies it into the package
   for `chiltepin skill`.
 
 ### The invariant that matters most
