@@ -1,5 +1,11 @@
 # chiltepin-render
 
+## 0.34.2
+
+### Patch Changes
+
+- 9713c5b: `lang: text` (also plain, plaintext, prompt) in a code block renders with no syntax highlighting; the generic keyword pass was colouring ordinary English in prompts and notes.
+
 ## 0.34.1
 
 ### Patch Changes
