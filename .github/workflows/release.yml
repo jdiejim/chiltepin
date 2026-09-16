@@ -36,6 +36,11 @@ jobs:
       - name: Version, publish, and push
         run: |
           set -euo pipefail
+          # This run may have queued behind another release that already
+          # versioned and pushed. Start from the current main, not from the
+          # commit that triggered the run, so the changesets seen here are
+          # exactly the ones still pending.
+          git pull --rebase origin main
           if [ -z "$(ls .changeset/*.md 2>/dev/null | grep -v README.md || true)" ]; then
             echo "No changesets — nothing to release."
             exit 0
