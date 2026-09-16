@@ -130,7 +130,7 @@ Every block has a strict schema. Look up its fields and a working example with `
 Install the [authoring skill](https://github.com/jdiejim/chiltepin/blob/main/skills/chiltepin/SKILL.md):
 
 ```bash
-npx skills add jdiejim/chiltepin -g -y
+npx skills add jdiejim/chiltepin -y
 ```
 
 Then ask your agent:

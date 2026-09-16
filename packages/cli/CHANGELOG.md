@@ -1,5 +1,11 @@
 # chiltepin
 
+## 0.47.7
+
+### Patch Changes
+
+- a2a58b4: The skill install hint drops `-g`; the skills CLI rejects it with `-y`.
+
 ## 0.47.6
 
 ### Patch Changes
