@@ -17,6 +17,7 @@ import { edgeLabelLayer, type EdgeLabelPoint } from '../svg/edgeSteps.js';
 import { GROUP_PADS, gridGroupsSvg, groupExtent, nestingPads } from '../svg/gridGroups.js';
 import { gridMetaAttrs, nodeCellAttrs } from '../svg/gridMeta.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
+import { nodeGlyph } from '../svg/blockStyle.js';
 import { revealAttr } from '../svg/reveal.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
 import { bl, bp } from '../paths.js';
@@ -237,7 +238,20 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
     // A chip takes the top of the box; the label sits a little lower.
     const dy = chip !== undefined ? 4 : 0;
     let texts = '';
-    if (sub.length > 0) {
+    if (kind === 'agent' || kind === 'llm') {
+      // The agent card from `agentloop`: sparkle, name at the left, and the
+      // second label line as a mono model chip — so an orchestrator, a critic
+      // and a guard read as agents at a glance, without the loop layout.
+      const nm = wrapText(name, 17, 1)[0] ?? name;
+      texts = nodeGlyph('agent', r.x + 10, r.y + 19, accent ? 'var(--accent)' : 'var(--ink)');
+      texts += `<text x="${r.x + 30}" y="${r.y + 30}" class="al-name${tone}">${escapeHtml(nm)}</text>`;
+      if (sub.length > 0) {
+        const chipW = Math.min(r.w - 20, 12 + sub.length * 5.6);
+        texts +=
+          `<rect x="${r.x + 10}" y="${r.y + 36}" width="${chipW.toFixed(1)}" height="13" rx="3" fill="var(--paper)" stroke="var(--rule-solid)" stroke-width="1"/>` +
+          `<text x="${(r.x + 10 + chipW / 2).toFixed(1)}" y="${r.y + 45.5}" text-anchor="middle" class="al-chip">${escapeHtml(sub)}</text>`;
+      }
+    } else if (sub.length > 0) {
       texts =
         `<text x="${cx}" y="${cy - 1 + dy}" class="fc-label t-name${tone}">${escapeHtml(lines[0] ?? name)}</text>` +
         `<text x="${cx}" y="${cy + 12 + dy}" class="fc-sub t-sub" text-anchor="middle">${escapeHtml(sub)}</text>`;
