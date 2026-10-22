@@ -93,6 +93,14 @@ export type DiagnosticCode =
   // Text copied unchanged from a `chiltepin new` doc template (see
   // `templateEcho.ts`). A warning: the example content was never replaced.
   | 'W_TEMPLATE_ECHO'
+  // Inline styling (see `inline.ts`, `inlineLint.ts`). An icon-shaped
+  // `:name:` that names no icon, a span class outside the allowlist or a
+  // class list that mixes two styles, or an unknown `icon:` field value. The
+  // text still renders (plain, or an empty ring), so a warning.
+  | 'W_INLINE_UNKNOWN'
+  // More than two `==highlights==` in one section: a highlight marks the one
+  // fact a skimming reader must not miss. A design nudge, never blocking.
+  | 'W_HIGHLIGHT_OVERUSE'
   // Prose-lint codes (see `prose/lint.ts`). Warnings by default; the CLI can
   // escalate them under a strict flag.
   | 'W_PROSE_LONG_SENTENCE'

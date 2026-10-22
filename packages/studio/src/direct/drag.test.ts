@@ -250,6 +250,19 @@ describe('tableColumnReorderSets — compound column reorder', () => {
     expect(sets?.[2]).toEqual({ path: ['rows', 1], value: ['2', '3', '1', 'extra'] });
   });
 
+  it('moves the foot (totals) row with the columns and leaves a group row alone', () => {
+    const grouped = {
+      columns: ['A', 'B'],
+      rows: [[{ v: 'Section', group: true }], ['1', '2']],
+      foot: ['Total', 3],
+    };
+    expect(tableColumnReorderSets(grouped, 1, 0)).toEqual([
+      { path: ['columns'], value: ['B', 'A'] },
+      { path: ['rows', 1], value: ['2', '1'] },
+      { path: ['foot'], value: [3, 'Total'] },
+    ]);
+  });
+
   it('returns null for no-op moves and missing columns', () => {
     expect(tableColumnReorderSets(data, 1, 1)).toBeNull();
     expect(tableColumnReorderSets(data, 1, 2)).toBeNull();

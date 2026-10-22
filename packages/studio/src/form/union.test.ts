@@ -46,7 +46,8 @@ function tableColumnNode(): UnionNode {
 describe('union arm classification', () => {
   it('splits primitive arms from the object arm', () => {
     const cell = tableCellNode();
-    expect(unionPrimitiveArms(cell).map((a) => a.kind)).toEqual(['string', 'number']);
+    // `true` / `false` are cells too (a `check` column draws them as ✓ ✗).
+    expect(unionPrimitiveArms(cell).map((a) => a.kind)).toEqual(['string', 'number', 'boolean']);
     expect(unionObjectArm(cell)?.kind).toBe('object');
   });
 

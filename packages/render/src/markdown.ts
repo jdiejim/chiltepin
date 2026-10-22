@@ -1,4 +1,15 @@
-import { readSourceMarker, stripHeadingMarkers } from 'chiltepin-core';
+import {
+  inlineStart,
+  matchIcon,
+  matchMark,
+  matchSpan,
+  readSourceMarker,
+  readSpanClasses,
+  stripHeadingMarkers,
+  type ChipStatus,
+  type IconName,
+  type SpanStyle,
+} from 'chiltepin-core';
 import { escapeHtml } from './escape.js';
 /**
  * Renders a prose segment to HTML via `marked`.
@@ -13,13 +24,19 @@ import { escapeHtml } from './escape.js';
  *   through blocks, never raw HTML.
  * - Link / image hrefs with `javascript:`, `data:`, or `vbscript:` schemes are
  *   rewritten to `#` (see {@link safeUrl}).
+ * - The inline styling forms (core `inline.ts`) add no way in: `==text==`
+ *   becomes `<mark>`, `[text]{.class}` maps an ALLOWED class to a class the
+ *   renderer owns (an unknown one leaves plain text), and `:name:` draws a
+ *   known icon. The author's class text and icon text never reach the output;
+ *   the text inside a form goes through the same escaping inline pipeline.
  *
  * Output is deterministic: no smartypants, and heading ids come only from the
  * caller (`headingIds`, computed once per document by `parts.ts`).
  */
 
-import { Marked, type Tokens } from 'marked';
+import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked';
 import { safeUrl } from './sanitize.js';
+import { inlineIconSvg } from './svg/icons.js';
 
 const marked = new Marked({ gfm: true, breaks: false });
 
@@ -35,7 +52,84 @@ function isOutlineDepth(depth: number): boolean {
   return depth === 2 || depth === 3;
 }
 
+/** The character just before the tokenizer's position: the end of the last token. */
+function lastChar(tokens: readonly Tokens.Generic[]): string {
+  return tokens[tokens.length - 1]?.raw.slice(-1) ?? '';
+}
+
+/** A chip's classes: the skin's one status-chip encoding (`.pill` in `css.ts`). */
+const CHIP_CLASS: Readonly<Record<ChipStatus | 'none', string>> = {
+  none: 'pill',
+  todo: 'pill pill-init',
+  done: 'pill pill-wait',
+  current: 'pill pill-end',
+  blocked: 'pill pill-neg',
+};
+
+/** The element a span style draws, around already-rendered inner HTML. */
+function styledSpan(style: SpanStyle | undefined, inner: string): string {
+  if (style === undefined) return inner;
+  if (style.kind === 'hue') return `<span class="hl hl-${style.hue}">${inner}</span>`;
+  if (style.kind === 'kbd') return `<kbd>${inner}</kbd>`;
+  return `<span class="${CHIP_CLASS[style.status ?? 'none']}">${inner}</span>`;
+}
+
+/**
+ * The inline styling forms, as `marked` extensions. Each tokenizer reads the
+ * grammar from core, so the renderer and the lint agree on every text.
+ */
+const INLINE_STYLING: TokenizerAndRendererExtension[] = [
+  {
+    name: 'inlineMark',
+    level: 'inline',
+    // One stop for all three forms: the plain-text run must end where a
+    // highlight or a known icon may start (`[` already ends a run).
+    start(src: string): number | undefined {
+      const i = inlineStart(src);
+      return i < 0 ? undefined : i;
+    },
+    tokenizer(src, tokens): Tokens.Generic | undefined {
+      const m = matchMark(src, lastChar(tokens));
+      if (m === undefined) return undefined;
+      return { type: 'inlineMark', raw: m.raw, tokens: this.lexer.inlineTokens(m.text) };
+    },
+    renderer(token): string {
+      return `<mark>${this.parser.parseInline(token.tokens ?? [])}</mark>`;
+    },
+  },
+  {
+    name: 'inlineSpan',
+    level: 'inline',
+    tokenizer(src): Tokens.Generic | undefined {
+      const m = matchSpan(src);
+      if (m === undefined) return undefined;
+      const read = readSpanClasses(m.classes);
+      return {
+        type: 'inlineSpan',
+        raw: m.raw,
+        style: read.ok ? read.style : undefined,
+        tokens: this.lexer.inlineTokens(m.text),
+      };
+    },
+    renderer(token): string {
+      return styledSpan(token['style'] as SpanStyle | undefined, this.parser.parseInline(token.tokens ?? []));
+    },
+  },
+  {
+    name: 'inlineIcon',
+    level: 'inline',
+    tokenizer(src, tokens): Tokens.Generic | undefined {
+      const m = matchIcon(src, lastChar(tokens));
+      return m === undefined ? undefined : { type: 'inlineIcon', raw: m.raw, name: m.name };
+    },
+    renderer(token): string {
+      return inlineIconSvg(token['name'] as IconName);
+    },
+  },
+];
+
 marked.use({
+  extensions: INLINE_STYLING,
   tokenizer: {
     // Decline raw HTML at both block and inline level; the text falls through
     // to the paragraph/text tokenizer, which escapes it.
@@ -124,9 +218,11 @@ export function proseHeadings(text: string): ProseHeading[] {
 
 /**
  * Renders a text-first field (callout body, pullquote text) as INLINE
- * Markdown — bold/italic/`code`/links work, block constructs don't. Blank
- * lines become paragraph breaks. Same hardened pipeline as {@link renderProse}
- * (raw HTML declined, hrefs sanitized).
+ * Markdown — bold/italic/`code`/links and the inline styling forms
+ * (`==highlight==`, `[text]{.class}`, `:icon:`) work, block constructs don't.
+ * Blank lines become paragraph breaks. Same hardened pipeline as
+ * {@link renderProse} (raw HTML declined, hrefs sanitized). Every field that
+ * calls it is listed in core's `INLINE_MD_FIELDS`, which the lint reads.
  */
 export function renderInlineMd(text: string): string {
   const paras = text

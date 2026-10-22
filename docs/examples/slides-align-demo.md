@@ -29,7 +29,7 @@ items:
 ```table
 columns: [Weight, Alignment]
 rows:
-  - [Light (≤1 block, little prose), Centered]
+  - ["Light (≤1 block, little prose)", Centered]
   - [Heavy (2+ blocks or lots of prose), Top]
 ```
 

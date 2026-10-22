@@ -25,10 +25,18 @@ as measured?
 ### Tables & metrics
 
 #### `table` — comparison table
-Rows × columns of exact values; a cell can carry a tone and emphasis.
-Answers: what are the exact values?
-`table`, not `matrix`, when cells are data rather than permissions; not
-`heatmap` when the reader needs the numbers rather than the pattern.
+Rows × columns of exact values. Cells and headers take inline Markdown
+(`**bold**`, `` `code` ``, links). A cell can carry a tone: `neg` for an
+error only, `warn` for a near miss. Answers: what are the exact values?
+A column `type` formats its cells. `num` aligns the figures and prints a
+`unit` (`$` before, `ms` or `%` after); write plain numbers, not `"$1,200"`.
+`check` draws yes · no · partial (or true / false) as ✓ ✗ –. `bar` adds a
+quiet bar to a number column that the reader compares.
+`[{ v: Payments, group: true }]` is a section row; `foot` is one totals row.
+Quote a cell that holds a comma. Highlight one column at most.
+`table`, not `statustable`, when the rows have no status to track; not
+`matrix` when cells are data rather than permissions; not `heatmap` when the
+reader needs the numbers rather than the pattern.
 
 #### `stats` — KPI / metric cards
 A row of cards: value, label, delta, and a trend arrow.

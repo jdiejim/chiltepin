@@ -62,7 +62,8 @@ describe('describeBlockSchema', () => {
   });
 
   it('union fields describe as union nodes with typed arms (table cells, dfd num)', () => {
-    // table.rows: array of array of (string | number | { v, tone, … }).
+    // table.rows: array of array of (string | number | boolean | { v, tone, … }).
+    // ONE object arm: Studio's Simple ⇄ Detailed cell toggle needs exactly one.
     const rows = field(describeBlockSchema('table'), 'rows');
     expect(rows.kind).toBe('array');
     if (rows.kind !== 'array') return;
@@ -72,10 +73,10 @@ describe('describeBlockSchema', () => {
     expect(cell.kind).toBe('union');
     if (cell.kind !== 'union') return;
     expect(cell.optional).toBe(false);
-    expect(cell.arms.map((a) => a.kind)).toEqual(['string', 'number', 'object']);
-    const detailed = cell.arms[2];
+    expect(cell.arms.map((a) => a.kind)).toEqual(['string', 'number', 'boolean', 'object']);
+    const detailed = cell.arms[3];
     if (detailed?.kind !== 'object') throw new Error('cell object arm expected');
-    expect(detailed.fields.map((f) => f.name)).toEqual(['v', 'tone', 'lead', 'highlight']);
+    expect(detailed.fields.map((f) => f.name)).toEqual(['v', 'tone', 'lead', 'highlight', 'group']);
     // The `v` field is itself a string|number union.
     expect(detailed.fields[0]?.node.kind).toBe('union');
 

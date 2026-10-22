@@ -20,7 +20,7 @@
  * ```
  */
 
-import type { Document } from 'chiltepin-core';
+import { stripInlineStyling, type Document } from 'chiltepin-core';
 import { FAVICON_LINK } from './brand.js';
 import { escapeHtml } from './escape.js';
 import { renderToc, wantsToc } from './outline.js';
@@ -87,10 +87,12 @@ export function renderDocument(doc: Document, opts: RenderOptions = {}): string 
  * subtitle as `<meta name="description">` and the Open Graph pair.
  */
 function socialMeta(title: string, subtitle: string | undefined): string {
+  // Plain words: a highlight, a chip, or an icon has no form in a search result.
+  const plain = subtitle !== undefined ? stripInlineStyling(subtitle) : undefined;
   const desc =
-    subtitle !== undefined && subtitle.trim() !== ''
-      ? `<meta name="description" content="${escapeHtml(subtitle)}">\n` +
-        `<meta property="og:description" content="${escapeHtml(subtitle)}">\n`
+    plain !== undefined && plain.trim() !== ''
+      ? `<meta name="description" content="${escapeHtml(plain)}">\n` +
+        `<meta property="og:description" content="${escapeHtml(plain)}">\n`
       : '';
   return (
     desc +

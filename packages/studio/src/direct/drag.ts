@@ -247,7 +247,9 @@ export function permutationFor(n: number, from: number, gap: number): number[] |
  * permutation, as one set list. Ragged rows are handled: short rows are padded
  * with `''` to the column count before permuting (a cell that didn't exist
  * becomes an empty one), and cells beyond the column count keep their tail
- * positions. Returns null for a no-op move or non-array `columns`.
+ * positions. The `foot` (totals) row moves with the columns; a group row
+ * (`[{ v, group: true }]`) is one label across the table and stays as it is.
+ * Returns null for a no-op move or non-array `columns`.
  *
  * A permutation is a whole-list write by nature — no per-index path expresses
  * it — which is what core's terse-aware `setYamlPath` exists for: it moves the
@@ -265,15 +267,17 @@ export function tableColumnReorderSets(
   if (perm === null) return null;
   const sets: PathSet[] = [{ path: ['columns'], value: perm.map((i) => columns[i]) }];
   const rows = rec !== null && Array.isArray(rec['rows']) ? rec['rows'] : [];
-  rows.forEach((row, ri) => {
-    if (!Array.isArray(row)) return;
+  const permuted = (row: readonly unknown[]): unknown[] => {
     const padded = row.slice();
     while (padded.length < columns.length) padded.push('');
-    sets.push({
-      path: ['rows', ri],
-      value: [...perm.map((i) => padded[i]), ...padded.slice(columns.length)],
-    });
+    return [...perm.map((i) => padded[i]), ...padded.slice(columns.length)];
+  };
+  rows.forEach((row, ri) => {
+    if (!Array.isArray(row) || row.some((c) => asRecord(c)?.['group'] === true)) return;
+    sets.push({ path: ['rows', ri], value: permuted(row) });
   });
+  const foot = rec?.['foot'];
+  if (Array.isArray(foot)) sets.push({ path: ['foot'], value: permuted(foot) });
   return sets;
 }
 

@@ -151,8 +151,10 @@ Stable codes that the CLI can sort, filter, and format:
 | `W_ORPHAN_NODE` · `W_EMPTY_GROUP` · `W_DUP_EDGE` | warn | Graph hygiene: a node with no edges in a block that has edges; a group whose cells hold no node; the same edge written twice (`core/src/graphLints.ts`) |
 | `W_DECISION_LABEL` · `W_ERROR_INTO_SUCCESS` · `W_IDLE_ACTOR` | warn | Graph meaning: a `flow` decision with an unlabelled branch; an exit whose edges say the opposite of its name (a success end reached only by `-x->`, a failure end that draws as the happy path); a `sequence` actor in no message |
 | `W_TEMPLATE_ECHO` | warn | A doc keeps a real share of a `chiltepin new` template's example text (`core/src/templateEcho.ts`). Silent when `meta.status` is `example` |
+| `W_INLINE_UNKNOWN` | warn | Inline styling the renderer cannot draw: an icon-shaped `:name:` that names no icon, a `[text]{.class}` class outside the allowlist or a class list that mixes two styles, or an unknown `list` / `drivers` `icon`. Reads prose and every field in `INLINE_MD_FIELDS` (`core/src/inline.ts`, `inlineLint.ts`); carries did-you-mean suggestions |
+| `W_HIGHLIGHT_OVERUSE` | warn | More than two `==highlights==` in one section (prose plus the inline-Markdown fields of its blocks) |
 
-The lints that are not schema checks (`lintGenericLabels`, the density, graph, link, and template-echo lints) run through one `lintDocument()` in core, which both `chiltepin check` and Studio call. `chiltepin review <file>` runs every check, renders each block in light, dark, phone, and print, measures cut and overlapping text, and writes a contact sheet.
+The lints that are not schema checks (`lintGenericLabels`, the prose, inline-styling, density, graph, link, and template-echo lints) run through one `lintDocument()` in core, which both `chiltepin check` and Studio call. `chiltepin review <file>` runs every check, renders each block in light, dark, phone, and print, measures cut and overlapping text, and writes a contact sheet.
 
 Uniform shape: `{ file, line?, level, code, message, value? }`.
 

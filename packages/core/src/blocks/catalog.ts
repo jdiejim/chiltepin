@@ -13,7 +13,7 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   callout:
     '```callout\ntone: warn\ntitle: Replays past 48 hours bill twice\nbody: Replay only gaps younger than 48 hours. Older trips are already on an invoice.\n```\n',
   table:
-    '```table\ncolumns: [Status, Meaning, Client action]\nrows:\n  - ["409", Capture already exists, Fetch it by id]\n  - ["429", Over 10 requests per second, Retry after Retry-After seconds]\n```\n',
+    '```table\ncolumns:\n  - Endpoint\n  - { label: p95, type: num, unit: ms }\n  - { label: Cached, type: check }\nrows:\n  - ["`GET /orders/{id}`", 38, yes]\n  - ["`POST /captures`", 120, no]\n  - ["`GET /orders`", 1240, partial]\nnote: Cached means the CDN layer answers; p95 is measured client side.\n```\n',
   sequence:
     '```sequence\nid: seq-place-order\nactors:\n  - { id: web, name: checkout-web }\n  - { id: api, name: orders-api }\nmessages:\n  - web -> +api: POST /orders\n  - alt: stock reserved\n  - api --> web: 201 Created\n  - else: out of stock\n  - api --> -web: 409 Conflict\n  - end\n```\n',
   erd:

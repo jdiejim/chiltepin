@@ -107,6 +107,36 @@ Give each number a unit, a window or percentile, and a baseline or target:
 when a fall is good news. If the headline is one number, lead with
 `bignumber`.
 
+## Inline styling — rare by design
+
+Prose, table cells, and callout bodies take four small forms. Most
+paragraphs need none of them. A page with ten colours reads worse than a
+plain page.
+
+| Write | Renders as | Use it for |
+|---|---|---|
+| `==text==` | a highlight | the one fact a skimming reader must not miss |
+| `[text]{.teal}` | text in a category hue | a category the reader can name |
+| `[Beta]{.pill}` · `{.pill .todo}` · `.done` · `.current` · `.blocked` | a status chip | a status word |
+| `[Ctrl]{.kbd}` | a key cap | a key the reader presses |
+| `:check:` | a line icon | a mark in a list, a table cell, or a status line |
+
+- Highlight one fact per section, at most. `check` warns at three
+  (`W_HIGHLIGHT_OVERUSE`). Use **bold** for a key term.
+- Use a hue (`.blue` `.green` `.amber` `.violet` `.teal` `.rose`) only
+  when it encodes a category the reader can name, and give it the colour
+  the diagrams give that family: "[stores]{.amber} are amber". Never colour
+  a word for emphasis.
+- Put a status word in a chip. The status picks the outline; a chip never
+  takes a hue.
+- Put icons in lists, tables, and status lines: `:check: Passed`,
+  `:x: Failed`, `:warn: Near the limit`. Never decorate a heading. The
+  names are the `icon` list that `chiltepin block list` prints; an unknown
+  name or class warns (`W_INLINE_UNKNOWN`).
+- In YAML, quote a string that holds a span or an icon:
+  `body: ":check: [Beta]{.pill} is live"`. Unquoted, `[` starts a list and
+  `: ` splits a key.
+
 ## How a block looks
 
 ````

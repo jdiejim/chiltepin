@@ -15,6 +15,7 @@
  */
 
 import { z } from 'zod';
+import { ICON_NAMES } from '../icons.js';
 import type { BlockType } from '../types.js';
 
 /* ── numeric field builders ─────────────────────────────────────────────────
@@ -133,7 +134,13 @@ export const calloutSchema = z
 
 // ─── table ──────────────────────────────────────────────────────────────────
 // doc-studio: columns can be strings OR `{ label, align?, highlight? }`.
-// Cells can be `string | number | { v, tone }`.
+// Cells can be `string | number | boolean | { v, tone, … }`. Cell and header
+// text is inline Markdown. A column `type` formats its cells. A one-cell row
+// `[{ v: Name, group: true }]` starts a section: `rows` stays a list of cell
+// lists, and a cell keeps ONE object form (the Studio grid, column ops, drag
+// and the Simple ⇄ Detailed cell toggle all rely on both).
+/** The column types a `table` formats, and what each draws. */
+const TABLE_COLUMN_TYPES = ['num', 'check', 'bar'] as const;
 const tableColumnSchema = z.union([
   z.string(),
   z
@@ -141,30 +148,118 @@ const tableColumnSchema = z.union([
       label: z.string(),
       align: z.enum(['l', 'c', 'r']).optional(),
       highlight: z.boolean().optional(),
+      type: z
+        .enum(TABLE_COLUMN_TYPES)
+        .optional()
+        .describe(
+          'num: right-aligned figures, thousands separators, and the decimals of the most precise value in the column. ' +
+            'check: yes · no · partial (or true / false) draw ✓ ✗ –; other text stays text. ' +
+            'bar: a num column with a quiet bar scaled to the largest value in the column (values ≥ 0). ' +
+            'Write plain numbers in num and bar columns.',
+        ),
+      unit: z
+        .string()
+        .optional()
+        .describe('num and bar columns only: printed with each value — `$` `€` `£` `¥` before it, any other unit (`ms`, `%`, `GB`) after it.'),
     })
     .strict(),
 ]);
+const tableValueSchema = z.union([z.string(), num, z.boolean()]);
+const tableCellFields = {
+  v: tableValueSchema,
+  tone: z.enum(['pos', 'neg', 'warn', 'muted']).optional(),
+  lead: z.boolean().optional(),
+  highlight: z.boolean().optional(),
+};
 const tableCellSchema = z.union([
   z.string(),
   num,
+  z.boolean(),
   z
     .object({
-      v: z.union([z.string(), num]),
-      tone: z.enum(['pos', 'neg', 'warn', 'muted']).optional(),
-      lead: z.boolean().optional(),
-      highlight: z.boolean().optional(),
+      ...tableCellFields,
+      group: z
+        .boolean()
+        .optional()
+        .describe('a section label: the row `[{ v: Name, group: true }]` spans the table and starts a section.'),
     })
     .strict(),
 ]);
+/** A `foot` cell: a value, never a section label. */
+const tableFootCellSchema = z.union([z.string(), num, z.boolean(), z.object(tableCellFields).strict()]);
+/** A row that holds a `group: true` cell: a section label, not data. */
+function isTableGroupRow(row: readonly unknown[]): boolean {
+  return row.some((c) => c !== null && typeof c === 'object' && (c as { group?: unknown }).group === true);
+}
+/** The `type` of column `i`, when the column declares one. */
+function tableColumnType(cols: ReadonlyArray<z.infer<typeof tableColumnSchema>>, i: number): string | undefined {
+  const c = cols[i];
+  return c !== undefined && typeof c !== 'string' ? c.type : undefined;
+}
 export const tableSchema = z
   .object({
     title: z.string().optional(),
     description: z.string().optional(),
     columns: z.array(tableColumnSchema).optional(),
     rows: z.array(z.array(tableCellSchema)).optional(),
+    foot: z
+      .array(tableFootCellSchema)
+      .optional()
+      .describe('one closing row (totals): bold, under a rule, formatted by the column types.'),
     note: z.string().optional(),
   })
-  .strict();
+  .strict()
+  // Structure the renderer cannot draw honestly: a cell with no column, a
+  // group row with data in it, a unit on a text column, a negative bar.
+  .superRefine((val, ctx) => {
+    const cols = val.columns ?? [];
+    const width = cols.length;
+    cols.forEach((c, i) => {
+      if (typeof c === 'string' || c.unit === undefined) return;
+      if (c.type !== 'num' && c.type !== 'bar') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['columns', i, 'unit'],
+          message: '`unit` needs `type: num` or `type: bar` on the same column',
+        });
+      }
+    });
+    const checkCells = (cells: readonly unknown[], path: Array<string | number>): void => {
+      if (width > 0 && cells.length > width) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: `this row has ${String(cells.length)} cells, but the table has ${String(width)} columns — quote a cell that holds a comma, or add a column`,
+        });
+      }
+      cells.forEach((c, i) => {
+        const v = c !== null && typeof c === 'object' && 'v' in c ? (c as { v: unknown }).v : c;
+        if (tableColumnType(cols, i) === 'bar' && typeof v === 'number' && v < 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [...path, i],
+            message: 'a bar column takes values of 0 or more — use `type: num` for signed values',
+          });
+        }
+      });
+    };
+    (val.rows ?? []).forEach((row, ri) => {
+      if (isTableGroupRow(row)) {
+        // Empty cells beside the label are padding (Studio pads a row when it
+        // adds or moves a column); a second value is not.
+        if (row.filter((c) => c !== '').length !== 1) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['rows', ri],
+            message: 'a group row holds only its label — write it as `[{ v: Name, group: true }]`',
+          });
+        }
+        return;
+      }
+      checkCells(row, ['rows', ri]);
+    });
+    if (val.foot !== undefined) checkCells(val.foot, ['foot']);
+  });
 
 // ─── sequence ───────────────────────────────────────────────────────────────
 // doc-studio actors are objects (id, name, sub?, external?). Messages have
@@ -1401,13 +1496,16 @@ export const compositionSchema = z
 // Shared accent palette for presentation cards.
 const accentEnum = z.enum(['navy', 'blue', 'teal', 'green', 'amber', 'purple', 'red', 'gray']);
 
+// The shared line icons (core `icons.ts`); prose takes the same names as `:name:`.
+const ICON_NOTE = `one line icon: ${ICON_NAMES.join(', ')}. Any other name draws an empty ring. Prose and table cells take the same names as \`:name:\`.`;
+
 // ─── drivers (a grid of factor/driver cards with an icon + accent) ──────────
 const driverItemSchema = z
   .object({
     title: z.string(),
     body: z.string().optional(),
     tag: z.string().optional(),
-    icon: z.string().optional(),
+    icon: z.string().optional().describe(ICON_NOTE),
     accent: accentEnum.optional(),
   })
   .strict();
@@ -1461,7 +1559,7 @@ const listItemSchema = z
   .object({
     lead: z.string(),
     text: z.string().optional(),
-    icon: z.string().optional(),
+    icon: z.string().optional().describe(ICON_NOTE),
     accent: accentEnum.optional(),
     done: z.boolean().optional(),
   })

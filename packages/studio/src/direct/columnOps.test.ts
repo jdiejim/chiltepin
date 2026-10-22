@@ -135,6 +135,21 @@ describe('addColumnSets — header + one cell per aligned row, one commit', () =
     ]);
   });
 
+  it('table: the foot row grows and shrinks with the columns; a group row keeps its one label cell', () => {
+    const data = { columns: ['A', 'B'], rows: [[{ v: 'S', group: true }], ['1', '2']], foot: ['Total', 3] };
+    const add = must(addColumnSets('table', data));
+    expect(add.sets).toEqual([
+      { path: ['columns', 2], value: 'New column' },
+      { path: ['rows', 1, 2], value: '' },
+      { path: ['foot', 2], value: '' },
+    ]);
+    expect(deleteColumnSets('table', data, 0)).toEqual([
+      { path: ['columns'], value: ['B'] },
+      { path: ['rows', 1], value: ['2'] },
+      { path: ['foot'], value: [3] },
+    ]);
+  });
+
   it('statustable: subtask cell rows grow too', () => {
     const f = fixture('statustable');
     const r = must(addColumnSets('statustable', f.data));

@@ -660,6 +660,25 @@ rows:
   - [ Team, { v: "$80", tone: pos }, "50" ]
 ```
 
+```table
+title: Read path by region
+columns:
+  - Region
+  - { label: Requests / day, type: bar }
+  - { label: p95, type: num, unit: ms }
+  - { label: Cost / month, type: num, unit: $ }
+  - { label: Multi-AZ, type: check }
+rows:
+  - [{ v: Americas, group: true }]
+  - ["`us-east-1`", 41200000, 38, 4210, yes]
+  - ["`sa-east-1`", 2600000, 71, 640, partial]
+  - [{ v: Europe and Asia, group: true }]
+  - ["`eu-west-1`", 18000000, 44, 2100.5, yes]
+  - ["`ap-southeast-2`", 3500000, 96, 880, no]
+foot: [Total, 65300000, "", 7830.5, ""]
+note: "**p95** is measured client side, 2026-09-28 to 2026-10-04."
+```
+
 ## Benchmark
 
 ```benchmark
@@ -941,6 +960,25 @@ errors:
   - DuplicateCapture — the same payment_id arrived twice; drop the event
 note: Fulfilment must be idempotent on order_id.
 ```
+
+## Text styling
+
+Prose, table cells, and callout bodies take four inline forms. A rollout
+note shows each one in its place: ==card payments move to v2 on 4 November==.
+
+- :check: [Done]{.pill .done} Sandbox keys for all three regions.
+- :clock: [In progress]{.pill .current} Card payments behind the `payments_v2` flag.
+- :minus: [Not started]{.pill .todo} Wallets: Apple Pay and Google Pay.
+- :ban: [Blocked]{.pill .blocked} Refunds wait for the ledger change.
+
+A hue names a category, the same one the diagrams use: [services]{.blue},
+[stores]{.amber}, and [queues]{.teal}. To switch a test account, press
+[Ctrl]{.kbd} [K]{.kbd} and type **Payments: use v2**.
+
+| Check | v1 | v2 |
+|---|---|---|
+| Capture in one call | :x: three calls | :check: one call |
+| 3-D Secure retry | :minus: manual | :check: automatic |
 
 ## Pull quote
 

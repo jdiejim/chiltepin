@@ -16,7 +16,7 @@
  */
 
 import type { BlockType, Document, Segment } from 'chiltepin-core';
-import { headingIds, headingSlug } from 'chiltepin-core';
+import { headingIds, headingSlug, stripInlineStyling } from 'chiltepin-core';
 import { escapeHtml } from './escape.js';
 import { proseHeadings, renderInlineMd } from './markdown.js';
 import { bp } from './paths.js';
@@ -130,9 +130,12 @@ export function captionInner(num: number | undefined, title: string | undefined)
   return n + sep + t;
 }
 
-/** A heading's text as inline HTML for the contents list (links unwrapped). */
+/**
+ * A heading's text as inline HTML for the contents list: links unwrapped, and
+ * highlights, chips, and icons reduced to their words.
+ */
 function headingHtml(text: string): string {
-  return renderInlineMd(text).replace(/<\/?a\b[^>]*>/g, '');
+  return renderInlineMd(stripInlineStyling(text)).replace(/<\/?a\b[^>]*>/g, '');
 }
 
 /** True when a document is long enough to need contents: 4+ headings, or about 3+ screens. */

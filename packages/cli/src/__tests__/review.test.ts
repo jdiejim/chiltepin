@@ -48,6 +48,11 @@ nodes:
 edges:
   - gw -> api: routes
 \`\`\`
+
+\`\`\`callout
+tone: tip
+body: ":check: Every hop is labelled."
+\`\`\`
 `;
 
 describe.skipIf(!chromium)('runReview', () => {
@@ -72,6 +77,10 @@ describe.skipIf(!chromium)('runReview', () => {
     expect(bad.exitCode).toBe(1);
     expect(clean.exitCode).toBe(0);
     expect(clean.summary.errors).toBe(0);
+  });
+
+  it('an inline icon in a callout is a glyph, not a drawing that shrinks', () => {
+    expect(clean.issues.filter((x) => x.kind === 'fit')).toEqual([]);
   });
 
   it('names a silent cut in data terms, with the fix in the YAML', () => {

@@ -551,7 +551,7 @@ rows:
   - [Boxes and arrows / topology, "block (presets: infra · event · ddd · network)"]
   - [A call-and-response over time, sequence]
   - [Branches and decisions, "flow (variant: dag) · swimlane · dfd"]
-  - [Tables, keys, relationships, erd]
+  - ["Tables, keys, relationships", erd]
   - [Module internals, "felogic (variant: be) · frontend · uml"]
   - [Access rules, "composition · anatomy · matrix"]
   - [A weighed decision, "options · proscons · cvt"]

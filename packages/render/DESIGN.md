@@ -26,6 +26,7 @@ Semantic roles. Renderers name the role (`var(--ink)`), never the value.
 | `rule-solid` | frame borders, baselines, secondary node and chip outlines | `#7d8499` | `#807b70` (3.6:1 on paper-2 — the floor for a line that carries meaning) |
 | `accent` | the one focal thing per diagram (see the rule below) | `#e4744c` | `#b04a25` (4.7:1 on paper-2, so it may carry small text) |
 | `accent-tint` | fill behind an accent-stroked shape | `rgba(228,116,76,.14)` | `rgba(176,74,37,.09)` |
+| `mark` | the `==highlight==` wash behind ink text: the accent's focus channel, a step stronger than `accent-tint` so a skimming eye finds it | `rgba(228,116,76,.24)` (ink 9.4:1 or more on it) | `rgba(176,74,37,.15)` (ink 10.8:1 or more) |
 | `link` | HTTP calls, external arrows, links in prose | `#93b7e8` | `#2f5c8f` |
 | `negative` | real errors only: a crimson (hue ≈ 345°), far from the orange accent | `#f58ca3` (7.8:1 on paper) | `#ad1f45` (5.9:1 on paper-2) |
 | `negative-tint` | fill behind an error shape | `rgba(245,140,163,.14)` | `rgba(173,31,69,.08)` |
@@ -310,6 +311,28 @@ below 0.62 of its width on a screen (the stage scrolls instead). Decks set
   the legend chip is a small copy of the node chip.
 - The step list (sequence) and footer pills stay; badges become hollow
   circles, `muted` stroke, `.t-badge` number; error badges use `negative`.
+
+## Inline styling in text
+
+Prose, table cells, and callout bodies take four small forms (core
+`inline.ts`, rendered by `markdown.ts`). Each one reuses a channel above, so
+text adds no colour of its own:
+
+- `==text==` is a `<mark>`: the `mark` wash (accent channel) behind `ink`
+  text. It marks the one fact a skimming reader must not miss, so it is the
+  prose form of the one-accent rule; `check` warns at three in a section.
+- `[text]{.<hue>}` is a category: the hue's text on its tint, exactly a
+  legend chip's colours, so "[stores]{.amber}" in a sentence matches the
+  amber stores in the diagram.
+- `[word]{.pill …}` is the status chip (`.pill` and its `-init`, `-wait`,
+  `-end`, `-neg` outlines), never a hue per status. `[key]{.kbd}` is a key cap.
+- `:name:` is a shared line icon at the text's size (`.ic`), in the text's
+  colour, with `role="img"` and its name as the accessible label.
+
+In print a highlight, a hue span and a chip keep their fill
+(`print-color-adjust: exact`); in black and white each reads as a grey wash
+or an outline behind ink text. Plain-text outputs (heading anchors, the
+contents list, the search index, the page description) keep the words.
 
 ## Accessibility floor
 

@@ -1,10 +1,13 @@
+import { stripInlineStyling } from './inline.js';
+
 /**
  * Heading anchors. One algorithm for the renderer (heading `id`s) and the
  * link check (`[text](#slug)`), so a link that resolves in `check` resolves
- * on the page.
+ * on the page. Inline styling is removed first: `## :rocket: Launch [Beta]{.pill}`
+ * anchors as `#launch-beta`.
  */
 export function headingSlug(text: string): string {
-  const slug = text
+  const slug = stripInlineStyling(text)
     .toLowerCase()
     .replace(/`([^`]*)`/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')

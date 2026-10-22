@@ -137,6 +137,16 @@ describe('buildSite', () => {
     expect(h).toContain('<h3 id="retries">');
   });
 
+  it('the nav and the search index carry plain words for styled headings and subtitles', () => {
+    const src = '```meta\ntitle: Styled\nsubtitle: ":check: Ready for ==review== [Beta]{.pill}"\n```\n\n## :rocket: Launch [Beta]{.pill}\n\nText.\n';
+    const { pages, files } = buildSite([{ slug: 's', file: 'docs/s.md', doc: parseDocument(src, 's') }]);
+    const s = pages.find((p) => p.path === 's.html')?.html ?? '';
+    expect(s).toContain('<div class="nav-sections"><a href="#launch-beta">Launch Beta</a></div>');
+    const search = JSON.parse(files.find((f) => f.path === 'search.json')?.content ?? '[]') as { s?: string; h: [string, string][] }[];
+    expect(search[0]?.s).toBe('✓ Ready for review Beta');
+    expect(search[0]?.h).toEqual([['launch-beta', 'Launch Beta']]);
+  });
+
   it('folds the menu under 900px, filters titles and headings, and never prints the chrome', () => {
     const { pages, files } = buildSite(load());
     const a = pages.find((p) => p.path === 'a.html')?.html ?? '';

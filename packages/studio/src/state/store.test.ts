@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DOC_TEMPLATES, insertBlock, removeSegment, templateBody } from 'chiltepin-core';
+import { DOC_TEMPLATES, insertBlock, removeSegment, replaceProse, templateBody } from 'chiltepin-core';
 import { firstContentIndex } from '../lib/docTemplates.js';
 import { newDocTemplate, useStudio } from './store.js';
 
@@ -97,6 +97,17 @@ describe('applyOp', () => {
     expect(s.source).toContain('```callout');
     expect(s.undoStack).toEqual([DOC]);
     expect(s.redoStack).toEqual([]);
+  });
+
+  it('a prose edit keeps inline styling byte for byte (the ProseEditor commit)', () => {
+    const text = 'Ship ==today==: [Beta]{.pill .current} :rocket: [Esc]{.kbd}\n\\==not== and `:x:`.';
+    const ok = useStudio.getState().applyOp((src, doc) => {
+      const i = doc.segments.findIndex((seg) => seg.kind === 'markdown' && seg.text.includes('Hello prose.'));
+      return replaceProse(src, doc, i, text);
+    });
+    expect(ok).toBe(true);
+    expect(useStudio.getState().source).toContain(text);
+    expect(useStudio.getState().source).not.toContain('Hello prose.');
   });
 
   it('catches a thrown RangeError and surfaces a toast instead of crashing', () => {

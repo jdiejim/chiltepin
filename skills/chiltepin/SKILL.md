@@ -155,6 +155,8 @@ the canonical name.
   baseline or target: "p95 over 7 d: 2.4 s → 600 ms". Set the block's
   `unit` field when it has one. Cite the source in the `note` or the sentence.
 - Use the user's nouns verbatim, and one name for one thing in every block.
+- **Inline styling** (`==highlight==`, `[Beta]{.pill .done}`, `:check:`) is
+  rare: one highlight per section, chips for status words (`reference/writing.md`).
 - **Vary the lens.** A third `callout` or a fourth block of one type warns
   (`W_LENS_REPEAT`). Reach past `callout`, `table`, `sequence`, `flow`:
   code to copy → `code`; terms → `glossary`; reader questions → `faq`.
@@ -178,7 +180,7 @@ sentences. Diagram data is untouchable.
 | `reference/kit.md` | Any `flow` or `block`: node kinds by hue, edges, groups, the Focus table, AI composition, splits, fit. |
 | `reference/blocks/<family>.md` | Choosing between neighbours in one family. |
 | `reference/recipes.md` | A whole document: the questions each kind of doc raises, and how it ends. |
-| `reference/writing.md` | The opening, headings, the page contract, `meta`, links, numbers, every YAML trap. |
+| `reference/writing.md` | The opening, headings, the page contract, `meta`, links, numbers, inline styling, every YAML trap. |
 | `reference/check.md` | A diagnostic code you do not recognise. |
 | `reference/derivations/*.md` | Worked derivations: request facts → reader → outline. Reasoning only, no YAML. |
 | `reference/patterns.md` | Events, queues, streams, fan-out, outbox, CQRS, sagas, retries. |

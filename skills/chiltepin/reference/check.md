@@ -120,6 +120,8 @@ the first block in the file.
 | `W_TEMPLATE_ECHO` | Most of the doc is the example text of a `chiltepin new` template. It states facts about a system that is not yours. | Replace every example passage with the facts of your system. Never ship template text. |
 | `W_LENS_REPEAT` | A third `callout`, or a fourth block of any other structural type, in one doc. | Merge them, or answer the third question with a different lens — the hint names the usual one. |
 | `W_PROSE_*` | A prose rule broke: a sentence or paragraph too long, a perfect or progressive tense, a banned opener, or a meta phrase ("The request names no model", "as requested", "the closing list"). | Apply the prose rules in `SKILL.md` and `style-ste.md`. State the fact, not the request: write "This doc assumes Sonnet." The present perfect with `since` or `for` is allowed in incident and status prose. Block text fields are exempt from the length cap. |
+| `W_INLINE_UNKNOWN` | An icon-shaped `:name:` names no icon, a span class is not on the list, a span names two styles, or a `list` / `drivers` `icon` is unknown. The text shows plain, or the icon shows an empty ring. | Use a suggested name. `chiltepin block list` lists every icon. A span takes one hue, `.kbd`, or `.pill` with one status word (`writing.md`, *Inline styling*). |
+| `W_HIGHLIGHT_OVERUSE` | More than two `==highlights==` in one section. | Keep the one fact a skimming reader must not miss. Remove the other highlights, or use **bold** for a key term. |
 | `W_DOC_CONVENTION` | The file path breaks the on-disk convention. | See `organizing.md`. Never rename a file only to silence this. |
 
 ## The final read

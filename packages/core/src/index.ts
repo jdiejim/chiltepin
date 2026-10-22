@@ -85,7 +85,35 @@ export {
 
 export { levenshtein, closest } from './suggest.js';
 export { headingSlug, headingIds } from './slug.js';
-export { ICON_NAMES, isIconName, type IconName } from './icons.js';
+export { ICON_NAMES, ICON_SYNONYMS, iconLabel, iconText, isIconName, type IconName } from './icons.js';
+export {
+  CHIP_STATUSES,
+  ICON_FIELDS,
+  INLINE_MD_FIELDS,
+  SPAN_CLASSES,
+  SPAN_HUES,
+  inlineMdStrings,
+  inlineStart,
+  matchIcon,
+  matchIconLike,
+  matchMark,
+  matchSpan,
+  readSpanClasses,
+  scanInline,
+  stringsAt,
+  stripInlineStyling,
+  type ChipStatus,
+  type FieldString,
+  type IconMatch,
+  type InlineFinding,
+  type InlineMatch,
+  type SpanClassResult,
+  type SpanHue,
+  type SpanMatch,
+  type SpanProblem,
+  type SpanStyle,
+} from './inline.js';
+export { HIGHLIGHT_LIMIT, lintInline } from './inlineLint.js';
 export { splitMarkdown, type RawSegment } from './splitter.js';
 export { parseBlockBody, locateYamlPath, type YamlParseResult, type YamlLocation } from './yaml.js';
 export { parseDocument } from './parser.js';

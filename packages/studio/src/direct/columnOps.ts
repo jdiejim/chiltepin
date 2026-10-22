@@ -44,6 +44,11 @@ function arrayAt(v: unknown, key: string): unknown[] {
   return Array.isArray(a) ? a : [];
 }
 
+/** A table section label: a row whose cell carries `group: true`. */
+function isGroupRow(row: readonly unknown[]): boolean {
+  return row.some((c) => asRecord(c)?.['group'] === true);
+}
+
 /** `rows.N.cells`-style pairs (statustable/matrix/journey; heatmap `values`). */
 function rowCellArrays(
   data: unknown,
@@ -64,11 +69,17 @@ const SPECS: Readonly<Record<string, ColumnSpec>> = {
     colsPath: 'columns',
     newHeader: () => 'New column',
     minCols: 1,
-    // A table row IS its cells array.
-    cellArrays: (data) =>
-      arrayAt(data, 'rows').flatMap((row, ri) =>
-        Array.isArray(row) ? [{ path: ['rows', ri], cells: row, pad: '' }] : [],
+    // A table row IS its cells array; the `foot` (totals) row aligns too. A
+    // group row (`[{ v, group: true }]`) is one label cell: it never gains or
+    // loses a column.
+    cellArrays: (data) => [
+      ...arrayAt(data, 'rows').flatMap((row, ri) =>
+        Array.isArray(row) && !isGroupRow(row) ? [{ path: ['rows', ri] as PathSeg[], cells: row, pad: '' as unknown }] : [],
       ),
+      ...(Array.isArray(asRecord(data)?.['foot'])
+        ? [{ path: ['foot'] as PathSeg[], cells: arrayAt(data, 'foot'), pad: '' as unknown }]
+        : []),
+    ],
   },
   statustable: {
     colsPath: 'columns',

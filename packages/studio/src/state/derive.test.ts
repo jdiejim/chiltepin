@@ -24,6 +24,15 @@ describe('derive', () => {
     expect(d.rendered?.segments.length).toBe(d.doc.segments.length);
   });
 
+  it('renders inline styling on the canvas and reports an unknown icon', () => {
+    const d = derive('```meta\ntitle: T\n```\n\nA ==fact== and [Beta]{.pill} :check: :nope:\n', 'styled');
+    const html = d.rendered?.segments.map((s) => s.html).join('') ?? '';
+    expect(html).toContain('<mark>fact</mark>');
+    expect(html).toContain('<span class="pill">Beta</span>');
+    expect(html).toContain('aria-label="check"');
+    expect(d.diagnostics.map((x) => x.code)).toContain('W_INLINE_UNKNOWN');
+  });
+
   it('runs the same lints as `chiltepin check` (core lintDocument)', () => {
     const src =
       '```meta\ntitle: T\n```\n\n```block\nnodes:\n  - { id: api, name: Orders API }\n  - { id: n9, name: New database }\n  - { id: db, name: orders-db }\nedges:\n  - api -> db\n  - api -> db\n```\n';

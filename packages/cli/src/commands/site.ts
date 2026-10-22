@@ -35,6 +35,7 @@ import {
   markdownHeadings,
   resolveLinkTarget,
   resolveRefs,
+  stripInlineStyling,
   validateDocument,
   type BlockDataMap,
   type Diagnostic,
@@ -442,9 +443,9 @@ function anchorHeadings(body: string, headings: readonly NavHeading[]): string {
   });
 }
 
-/** A heading's text for the nav: inline Markdown reduced to plain text. */
+/** A heading's text for the nav: inline Markdown (and inline styling) reduced to plain text. */
 function plainHeading(text: string): string {
-  return text
+  return stripInlineStyling(text)
     .replace(/`([^`]*)`/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[*_~]/g, '')
@@ -963,7 +964,7 @@ export function buildSite(docs: readonly SiteDoc[], opts: SiteOptions = {}): Sit
       return {
         u: `${r.slug}.html`,
         t: meta?.title ?? r.slug,
-        ...(meta?.subtitle !== undefined ? { s: meta.subtitle } : {}),
+        ...(meta?.subtitle !== undefined ? { s: stripInlineStyling(meta.subtitle) } : {}),
         ...(meta?.tag !== undefined ? { g: meta.tag } : {}),
         h: r.headings.map((h) => [h.id, plainHeading(h.text)] as const),
       };

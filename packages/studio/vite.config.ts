@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+import { readFileSync } from 'node:fs';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
@@ -13,8 +14,21 @@ import react from '@vitejs/plugin-react';
  */
 const web = process.env['VITE_STUDIO_BACKEND'] === 'vault';
 
+/**
+ * The bundle carries chiltepin-render's line icons, some adapted from Lucide
+ * (ISC). A minified bundle drops the licence comment, so the notices file
+ * ships next to `index.html` instead.
+ */
+const notices: Plugin = {
+  name: 'third-party-notices',
+  generateBundle() {
+    const source = readFileSync(new URL('../../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+    this.emitFile({ type: 'asset', fileName: 'THIRD_PARTY_NOTICES.md', source });
+  },
+};
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), notices],
   base: './',
   define: web ? { 'import.meta.env.VITE_STUDIO_BACKEND': '"vault"' } : {},
   build: {

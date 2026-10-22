@@ -151,7 +151,8 @@ function measureReader(args: ReaderArgs): ReaderBlock[] {
 
     // Fit, as the reader sees it.
     const stage = sec.querySelector('.diagram-stage');
-    const svg = stage?.querySelector(':scope > svg') ?? sec.querySelector('svg[viewBox]');
+    // An inline icon in text (`.ic`, from `:name:`) is a glyph, not the drawing.
+    const svg = stage?.querySelector(':scope > svg') ?? sec.querySelector('svg[viewBox]:not(.ic)');
     const vb = svg instanceof SVGSVGElement ? svg.viewBox.baseVal : null;
     const width = vb !== null && vb.width > 0 ? vb.width : undefined;
     const shown = svg?.getBoundingClientRect().width ?? 0;

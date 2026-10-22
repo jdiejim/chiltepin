@@ -28,6 +28,8 @@ export const LIGHT_SET = `  /* The skin's role tokens (packages/render/DESIGN.md
   --rule:rgba(31,36,48,.14); --rule-solid:#807b70; --rule-table:rgba(31,36,48,.32);
   --accent:#b04a25; --accent-tint:rgba(176,74,37,.09); --link:#2f5c8f;
   --negative:#ad1f45; --negative-tint:rgba(173,31,69,.08);
+  /* The ==highlight== wash: the accent's focus channel, strong enough to find by skimming; ink stays the text. */
+  --mark:rgba(176,74,37,.15);
   /* Tone steps between paper-2 and ink (heatmap ramp: paper → paper-2 → ink-3 → ink-2 → ink). Fills only, never text. */
   --ink-2:#5d6067; --ink-3:#9c9d9e;
   /* Chart series ramp: five desaturated hues for categorical series. Text never sits on them directly — use a paper mask. */
@@ -50,6 +52,7 @@ export const DARK_SET = `  --paper:#15171d; --paper-2:#1d2028; --ink:#eceae4; --
   --rule:rgba(236,234,228,.13); --rule-solid:#7d8499; --rule-table:rgba(236,234,228,.28);
   --accent:#e4744c; --accent-tint:rgba(228,116,76,.14); --link:#93b7e8;
   --negative:#f58ca3; --negative-tint:rgba(245,140,163,.14);
+  --mark:rgba(228,116,76,.24);
   --ink-2:#adadab; --ink-3:#62646a;
   --series-1:#9db08f; --series-2:#8aa6c6; --series-3:#d1ac72; --series-4:#c48c72; --series-5:#a094ab;
   --hue-blue:#8fb0e2; --hue-green:#93c29c; --hue-amber:#d6b06a; --hue-violet:#b7a2e6; --hue-teal:#76bfba; --hue-rose:#e39cc6;
@@ -323,13 +326,14 @@ ${hueCss}
 .docskin .pill-active{border-color:var(--ink);}
 .docskin .pill-wait{background:var(--paper-2);border-color:var(--paper-2);}
 .docskin .pill-end{border-color:var(--accent);color:var(--accent);}
+.docskin .pill-neg{border-color:var(--negative);color:var(--negative);}
 /* presentation: comparison table */
-.docskin .pres-table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:13px;border:1px solid var(--rule-solid);border-radius:6px;overflow:hidden;}
+.docskin .pres-table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:13px;line-height:1.45;border:1px solid var(--rule-solid);border-radius:6px;overflow:hidden;overflow:clip;}
 .docskin .pres-table thead{background:var(--paper-2);color:var(--muted);}
-.docskin .pres-table th{padding:9px 12px;text-align:left;font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;font-weight:500;border-bottom:1px solid var(--rule-solid);}
+.docskin .pres-table th{padding:9px 12px;text-align:left;vertical-align:bottom;font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;font-weight:500;border-bottom:1px solid var(--rule-solid);}
 .docskin .pres-table th.r,.docskin .pres-table td.r{text-align:right;} .docskin .pres-table th.c,.docskin .pres-table td.c{text-align:center;}
 .docskin .pres-table th.hi{color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent);}
-.docskin .pres-table td{padding:9px 12px;border-bottom:1px solid var(--rule-table);} .docskin .pres-table tbody tr:last-child td{border-bottom:none;}
+.docskin .pres-table td{padding:8px 12px;vertical-align:top;border-bottom:1px solid var(--rule-table);} .docskin .pres-table tbody tr:last-child td{border-bottom:none;}
 .docskin .pres-table tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 50%,transparent);}
 .docskin .pres-table td.lead{font-weight:600;color:var(--ink);}
 .docskin .pres-table td.hi{background:var(--accent-tint);}
@@ -341,6 +345,40 @@ ${hueCss}
 /* A wide table scrolls inside its own box on a phone; the page never does. */
 .docskin .tbl-scroll{position:relative;overflow-x:auto;margin:14px 0;}
 .docskin .tbl-scroll>table{margin:0;}
+/* table block: tabular figures line digits up; a unit is quieter than its number. */
+.docskin .pres-table :is(th,td).num,.docskin .pres-table td.r,.docskin .pres-table tfoot td{font-variant-numeric:tabular-nums;}
+.docskin .pres-table td.num{white-space:nowrap;} .docskin .pres-table .t-u{color:var(--muted);}
+.docskin .pres-table a{color:var(--link);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--link) 50%,transparent);}
+.docskin .pres-table code{font-size:.84em;padding:1px 5px;white-space:nowrap;}
+/* check: the icon carries the answer; the word stays for screen readers and copy. */
+.docskin .pres-table .t-chk .ic{width:1.15em;height:1.15em;vertical-align:-.22em;}
+.docskin .pres-table .t-yes{color:var(--ink);} .docskin .pres-table .t-yes .ic{stroke-width:2.75;} .docskin .pres-table .t-no,.docskin .pres-table .t-partial{color:var(--muted);}
+.docskin .pres-table .t-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+/* bar: a quiet bar beside its number, scaled to the largest value in the column. */
+.docskin .pres-table td.bar{min-width:150px;}
+.docskin .pres-table .t-bc{display:flex;align-items:center;gap:10px;}
+.docskin .pres-table .t-bar{flex:1 1 auto;min-width:40px;height:6px;border-radius:1px;background:var(--rule);}
+.docskin .pres-table .t-fill{display:block;height:100%;border-radius:1px;background:color-mix(in srgb,var(--muted) 60%,transparent);}
+.docskin .pres-table .t-v{flex:none;text-align:right;}
+.docskin .pres-table td.hi .t-fill{background:var(--accent);}
+/* A group row labels the rows under it; the label stays in view while the table scrolls. */
+.docskin .pres-table tr.t-grp>th{padding:16px 12px 6px;font-size:.77em;font-weight:600;color:var(--ink);background:var(--paper);border-bottom:1px solid var(--rule-solid);}
+.docskin .pres-table tbody tr.t-grp:first-child>th{padding-top:10px;}
+.docskin .pres-table tr.t-grp>th>span{position:sticky;left:12px;}
+/* foot: the closing row (totals) under a rule. */
+.docskin .pres-table tfoot td{font-weight:600;color:var(--ink);border-top:1px solid var(--rule-solid);border-bottom:none;}
+/* Rules, not stripes, separate the rows. On a phone, once the table scrolls
+   sideways, its first column stays in view on its own ground with a rule
+   (scroll-driven: a table that fits, or a browser without the feature, draws
+   a plain table). */
+.docskin .tbl-scroll>.pres-table tbody tr:nth-child(even){background:none;}
+.docskin .tbl-scroll>.pres-table{--t-stub:var(--paper);} .docskin .tbl-scroll>.pres-table thead{--t-stub:var(--paper-2);} .docskin .tbl-scroll>.pres-table thead th{background-color:var(--paper-2);}
+.docskin .tbl-scroll>.pres-table td.hi:first-child{background-image:linear-gradient(var(--accent-tint),var(--accent-tint));}
+.docskin .tbl-scroll>.pres-table tbody tr:not(.t-grp):hover>td:not(.hi){background-image:linear-gradient(color-mix(in srgb,var(--ink) 4%,transparent),color-mix(in srgb,var(--ink) 4%,transparent));}
+@keyframes docskin-tstub{from{box-shadow:inset -1px 0 0 transparent;}3%,to{box-shadow:inset -1px 0 0 var(--rule-solid);background-color:var(--t-stub);}}
+@supports (animation-timeline:scroll()){@media(max-width:640px){.docskin .tbl-scroll>.pres-table :is(th,td):first-child:not([colspan]){position:sticky;left:0;z-index:1;animation:docskin-tstub linear both;animation-timeline:scroll(nearest inline);}
+  .docskin div.tbl-scroll{-webkit-mask-image:linear-gradient(to right,black calc(100% - var(--fade-r)),transparent);mask-image:linear-gradient(to right,black calc(100% - var(--fade-r)),transparent);}}}
+@media print{.docskin .pres-table tfoot{display:table-row-group;} .docskin .tbl-scroll>.pres-table :is(th,td){position:static;animation:none;} .docskin .pres-table .t-sr{overflow:visible;}}
 
 /* presentation: stat cards */
 .docskin .stat-row{display:flex;flex-wrap:wrap;gap:14px;margin:16px 0;}
@@ -459,6 +497,8 @@ ${hueCss}
   .docskin h2,.docskin h3,.docskin h4,.docskin .fig-caption,.docskin .section-lede{break-after:avoid;}
   .docskin .section-block>.fig-caption{break-after:avoid;}
   .docskin svg text{paint-order:normal!important;stroke:none!important;}
+  /* A highlight, a hue span, and a chip keep their fill on paper even when the reader's print dialog drops backgrounds. */
+  .docskin :is(mark,.hl,.pill,kbd){-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 }
 /* callouts */
 /* Tones by left rule and title colour: note = hairline · tip = accent · warn = the warn role (amber) · danger = negative · info = link · success = green. Body text is always ink. */
@@ -490,6 +530,18 @@ ${hueCss}
 .docskin .prose code{font-family:var(--font-mono);font-size:.86em;background:var(--light-gray);padding:2px 6px;border-radius:2px;color:var(--charcoal);border:1px solid var(--rule);}
 .docskin .prose strong{font-weight:700;color:var(--charcoal);}
 .docskin .prose em{font-style:italic;}
+/* Inline styling (markdown.ts, core inline.ts) — wherever inline Markdown renders: prose, table cells,
+   callout bodies. ==text== is the one highlight: the accent wash behind ink text. [text]{.hue} is a
+   category: the hue's tint behind the hue's text. [key]{.kbd} is a key cap. [word]{.pill …} is the status
+   chip above, set on the text's baseline. An icon (.ic) takes the text's colour and size. */
+.docskin mark{background:var(--mark);color:inherit;padding:.06em .18em;margin:0 -.04em;border-radius:2px;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+.docskin .hl{padding:.06em .3em;border-radius:3px;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+.docskin .hl-blue{color:var(--hue-blue);background:var(--hue-blue-tint);} .docskin .hl-green{color:var(--hue-green);background:var(--hue-green-tint);}
+.docskin .hl-amber{color:var(--hue-amber);background:var(--hue-amber-tint);} .docskin .hl-violet{color:var(--hue-violet);background:var(--hue-violet-tint);}
+.docskin .hl-teal{color:var(--hue-teal);background:var(--hue-teal-tint);} .docskin .hl-rose{color:var(--hue-rose);background:var(--hue-rose-tint);}
+.docskin .hl :is(strong,em){color:inherit;}
+.docskin kbd{display:inline-block;font-family:var(--font-mono);font-size:.78em;font-weight:500;line-height:1.35;padding:.05em .45em;min-width:1.7em;text-align:center;color:var(--ink);background:var(--paper);border:1px solid var(--rule-solid);border-bottom-width:2px;border-radius:4px;white-space:nowrap;vertical-align:.08em;}
+.docskin :is(p,li,td,th,blockquote,h2,h3,h4,.callout-body,.pull-text,.sq-text) .pill{vertical-align:.12em;line-height:1.35;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
 /* glossary */
 /* journey — stages share one column width, so the emotion row's dots sit over their stages; a dashed neutral midline */
 .docskin .jr-scroll{position:relative;overflow-x:auto;}
