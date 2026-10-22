@@ -111,11 +111,29 @@ function responseTable(responses: readonly Resp[]): string {
   );
 }
 
+/**
+ * `text` with a break opportunity (`<wbr>`) after every `sep`, and each
+ * segment kept whole (`.seg`: no break inside, not even at a hyphen) — a long
+ * path wraps between segments, never inside `{organisationId}` or
+ * `feature-flags`. The text itself is unchanged.
+ */
+export function segmentBreaks(text: string, sep: string): string {
+  return text
+    .split(sep)
+    .map((seg) => (seg === '' ? '' : `<span class="seg">${escapeHtml(seg)}</span>`))
+    .join(`${escapeHtml(sep)}<wbr>`);
+}
+
+/** The endpoint path with a break after every `/` (see {@link segmentBreaks}). */
+export function pathWithBreaks(path: string): string {
+  return segmentBreaks(path, '/');
+}
+
 export function renderEndpoint(data: BlockDataMap['endpoint']): string {
   const head =
     `<div class="ep-head">` +
     `<span class="ep-method ${data.method.toLowerCase()}"${bp('method')}>${escapeHtml(data.method)}</span>` +
-    `<span class="ep-path"${bp('path')}>${escapeHtml(data.path)}</span>` +
+    `<span class="ep-path"${bp('path')}>${pathWithBreaks(data.path)}</span>` +
     (data.auth !== undefined ? `<span class="ep-auth"${bp('auth')}>${escapeHtml(data.auth)}</span>` : '') +
     `</div>`;
 

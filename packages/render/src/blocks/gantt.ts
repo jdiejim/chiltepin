@@ -13,7 +13,7 @@
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
-import { wrapText } from '../svg/wrapText.js';
+import { cutTitle, ellipsize, fitText, FONT, lineCount, textWidth } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 import { DECORATIVE } from '../svg/decorative.js';
@@ -48,35 +48,61 @@ const KIND_LEGEND: Record<Kind, LegendItem> = {
   milestone: { swatch: 'node-dashed', label: 'milestone' },
 };
 
-/** One period head: cut to `max` characters (full text in a <title>) when it cannot fit. */
-function periodHead(text: string, x: number, y: number, max: number): string {
-  const shown = text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text;
-  const title = shown === text ? '' : `<title>${escapeHtml(text)}</title>`;
-  return `<text x="${x}" y="${y}" class="t-eyebrow" text-anchor="middle">${title}${escapeHtml(shown)}</text>`;
+/** One period head, cut with "…" (full text in a <title>, the cut reported) only when even two columns cannot hold it. */
+function periodHead(text: string, x: number, y: number, room: number, i: number): string {
+  const head = ellipsize(text, room, FONT.eyebrow, {
+    path: `periods.${i}`,
+    field: 'period',
+    hint: 'Shorten the period name.',
+  });
+  return `<text x="${x}" y="${y}" class="t-eyebrow" text-anchor="middle">${cutTitle(head)}${escapeHtml(head.lines[0] ?? '')}</text>`;
 }
+
+/** The label gutter: from its base width, as wide as it takes (up to a cap) for every task label to fit in two lines. */
+const LABEL_TEXT_W = 136;
+const LABEL_TEXT_MAX = 280;
+/** The most lines a task label takes; past them it ends in "…". */
+const LABEL_LINES = 3;
+/** A period column: its base width, and the widest it grows for its head (one row, then two staggered rows). */
+const COL_W = 64;
+const COL_ONE_ROW_MAX = 88;
+const COL_TWO_ROW_MAX = 104;
 
 export function renderGantt(data: BlockDataMap['gantt']): string {
   const periods = data.periods ?? [];
   const tasks = data.tasks ?? [];
   const P = Math.max(periods.length, 1);
-  const labelW = 156;
   const padX = 20;
   const barH = 18;
-  const colW = 64;
-  // Period heads are 10px eyebrow caps (~6.6px per character). When they do
-  // not fit their column they alternate between two rows; when even a
-  // double-width column is too narrow they are cut with the full text in a
-  // <title>. Never let neighbouring heads print over each other.
-  const HEAD_CH = 6.6;
-  const headW = (t: string): number => t.length * HEAD_CH;
-  const staggered = periods.some((t) => headW(t) > colW - 6);
-  const headMax = Math.max(1, Math.floor(((staggered ? colW * 2 : colW) - 6) / HEAD_CH));
+  // Task labels: widen the gutter until every label fits in two lines (up to
+  // a cap); a label that still needs more wraps to three, then ends in "…".
+  let textW = LABEL_TEXT_W;
+  const longest = (w: number): number => Math.max(1, ...tasks.map((t) => lineCount(t.label, w)));
+  while (textW < LABEL_TEXT_MAX && longest(textW) > 2) textW += 4;
+  const labelW = textW + padX;
+  // Period heads are eyebrow caps. A column grows to hold its head; when
+  // that is not enough the heads alternate between two rows; when even two
+  // columns cannot hold one it is cut, with the full text in a <title>.
+  // Neighbouring heads never print over each other.
+  const widest = Math.max(0, ...periods.map((t) => textWidth(t, FONT.eyebrow)));
+  const oneRow = Math.ceil(widest + 6) <= COL_ONE_ROW_MAX;
+  const colW = oneRow
+    ? Math.max(COL_W, Math.ceil(widest + 6))
+    : Math.min(COL_TWO_ROW_MAX, Math.max(COL_ONE_ROW_MAX, Math.ceil((widest + 6) / 2)));
+  const staggered = !oneRow;
+  const headRoom = (staggered ? colW * 2 : colW) - 6;
   const padTop = staggered ? 48 : 34;
   const padBot = 14;
-  // Long task labels wrap (≤3 lines) inside the label gutter instead of
-  // running under the bars; every row grows uniformly when any label wraps.
-  const labelLines = tasks.map((t) => wrapText(t.label, Math.floor((labelW - padX) / 7), 3));
-  const maxLines = Math.max(1, ...labelLines.map((ls) => ls.length));
+  // Every row grows uniformly when any label wraps.
+  const labelLines = tasks.map((t, i) =>
+    fitText(t.label, {
+      width: textW,
+      font: FONT.name,
+      maxLines: LABEL_LINES,
+      report: { path: `tasks.${i}.label`, field: 'label', hint: 'Shorten the task `label`.' },
+    }),
+  );
+  const maxLines = Math.max(1, ...labelLines.map((w) => w.lines.length));
   const rowH = 30 + (maxLines - 1) * 14;
   const width = labelW + padX * 2 + P * colW;
   const height = padTop + tasks.length * rowH + padBot;
@@ -88,7 +114,7 @@ export function renderGantt(data: BlockDataMap['gantt']): string {
     s +=
       `<g${bp(`periods.${i}`)}>` +
       `<line x1="${xCol(i)}" y1="${padTop - 6}" x2="${xCol(i)}" y2="${height - padBot}" stroke="var(--rule)" stroke-width="1"${DECORATIVE}/>` +
-      periodHead(periods[i] ?? '', xCol(i) + colW / 2, padTop - 12 - (staggered && i % 2 === 0 ? 14 : 0), headMax) +
+      periodHead(periods[i] ?? '', xCol(i) + colW / 2, padTop - 12 - (staggered && i % 2 === 0 ? 14 : 0), headRoom, i) +
       `</g>`;
   }
   s += `</g>`;
@@ -104,12 +130,15 @@ export function renderGantt(data: BlockDataMap['gantt']): string {
     const bx = xCol(t.start ?? 0);
     const span = Math.max(1, t.span ?? 1);
     const bw = span * colW - 8;
-    const ls = labelLines[i] ?? [];
+    const fit = labelLines[i];
+    const ls = fit?.lines ?? [];
+    const tip = fit !== undefined ? cutTitle(fit) : '';
     const cls = kind === 'active' ? 't-name c-accent' : 't-name';
     const label =
       ls.length <= 1
-        ? `<text x="${padX}" y="${y + rowH / 2 + 4.5}" class="${cls}"${bp(`tasks.${i}.label`)}>${escapeHtml(t.label)}</text>`
+        ? `<text x="${padX}" y="${y + rowH / 2 + 4.5}" class="${cls}"${bp(`tasks.${i}.label`)}>${tip}${escapeHtml(ls[0] ?? '')}</text>`
         : `<g${bp(`tasks.${i}.label`)}>` +
+          tip +
           ls
             .map(
               (ln, j) =>

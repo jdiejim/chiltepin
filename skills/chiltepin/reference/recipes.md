@@ -1,171 +1,205 @@
-# Composition recipes
+# Composition recipes — from facts to an outline
 
-Part of the **chiltepin** skill (the hub is `SKILL.md`, one folder up).
-These are worked examples of composition, not forms to fill in. Two different
-systems must not produce structurally identical docs.
+Part of the **chiltepin** skill (the hub is `SKILL.md`, one folder up). Use
+this in step 2 (PLAN) of the loop. A recipe is not a stack to fill. It lists
+the questions a kind of document usually raises, and the fact in the
+inventory that makes each block worth its place. Fields:
+`chiltepin block <type>`; discriminators: the family files; worked examples
+of the reasoning: `derivations/`.
 
-Start from the reader
-questions, not from a recipe. Keep a block only if your system raises its
-question, and drop it if not. Add a block these stacks never mention when your
-system needs it. Fields: `chiltepin block <type>`; discriminators: the family files.
+Rules that hold for every recipe:
 
-Each recipe: the reader questions → the block stack in document order → the
-alternatives rejected, and why. The stack notes what each block carries and
-what the prose around it carries. Prose carries why, tradeoff, and consequence — never a
-description of the block beside it.
+- Keep a block only when the inventory holds the fact that picks it. No
+  fact, no block — and no invented content to fill one.
+- Open with two sentences: the answer, then the number or limit that forces
+  it. The first block after them shows the whole mechanism, loops intact.
+- The order follows the reader's questions. Each recipe names how it ends:
+  the open decision and its owner, open questions with who answers each
+  (`faq`), follow-up work with owners (`statustable`), or the escalation.
+  Never end on caveats. A doc that asks for action ends with the ask: the
+  owner, the date, the next step.
+- Two docs on different systems do not share a block sequence. If yours
+  matches a recipe line by line, check that every block traces to a fact.
+- Prose carries why, tradeoff, and consequence — never a description of
+  the block beside it.
+
+Page rhythm:
+
+- No block repeats a fact that another block draws. A `spec` holds only
+  what no diagram shows.
+- Past four blocks, put a light element (a short prose turn, a `callout`,
+  `stats`) between two dense diagrams.
+- When the headline is one number, lead with `bignumber`.
+- A schema longer than 25 lines goes in a field `table` or an
+  `eventcontract`, never a code wall.
+
+## Design doc or agreed fix
+
+Questions: What is broken, by how much? · What do we change? · What did we
+reject, and why? · What does it cost? · What is still open?
+
+- The problem with a number → the opening, then `stats`, `chart`, or
+  `spans` when the measurement is the evidence.
+- The change → the diagram of the mechanism after the fix (`flow`,
+  `sequence`, `block`), from the kit.
+- The choice → `options` with `tone: chosen`, or one sentence: "We rejected
+  X because Y."
+- The cost → `envelope`, `perfbudget`, or one sentence with the number.
+- Ends on: the open decisions with owners (`faq`) and the follow-up work
+  (`statustable`). Set `meta.status: proposal` until it is agreed.
+
+Trap: a design doc with no rejected option was not a decision.
 
 ## Backend architecture
 
-Reader questions: What are the boundaries? · What calls what on the critical
-path? · Who owns what?
+Questions: What are the boundaries? · What calls what on the critical path?
+· What fails independently? · Who owns what?
 
-1. `meta` — the system's name and its one-line job.
-2. Prose — why the system exists; the one constraint that shaped the design.
-3. `c4` — ours vs external, one level only. Prose after: what the boundary
-   decision costs, not what the picture already shows.
-4. `cluster` or `block` (`preset: infra`) — the deployment topology. Prose
-   after: which parts fail independently.
-5. `sequence` — the one request path that pays the bills, with its failure
-   branch. Prose after: the consequence a client can rely on.
-6. `table` — service × responsibility × owner.
-7. `callout` — the invariant that must not break.
+- Ours vs external, one level → `c4`. The prose after it gives what the
+  boundary costs.
+- Where it runs (accounts, clusters, regions) → `block` (`preset: infra`)
+  or `cluster`, from the kit (`kit.md`).
+- The one request path that pays the bills, with its failure branch →
+  `sequence`.
+- Data that a regulator or a migration cares about → `erd`.
+- Named owners per service → `table` or `team`.
+- A rule that code must never break → `spec` (several) or `callout` (one).
+- Ends on: the open design questions, or the next change, with owners.
 
-Rejected: `uml` (class detail is the code's job) · `graph` (no boundaries —
-a backend doc is about what contains what).
+Traps: `uml` (class detail is the code's job); `graph` (no boundaries).
 
-## AI / agent architecture
+## AI system — agents, models, tools, guards, people
 
-Reader questions: What does the loop do? · What can it call? · What fills the
-window? · What does a real run look like?
+Questions: What runs, in what order? · Which step is a model, a tool, a
+check, or a person? · Where does it branch, retry, or stop? · What can it
+never do on its own?
 
-1. `meta` — the agent's name and the task it owns.
-2. Prose — the task delegated to the agent; where a human stays in the loop.
-3. `agentloop` — environment, tools, memory, stop condition.
-4. `context` — the window budget. Prose after: what gets evicted first, and
-   why that is safe.
-5. `prompt` — the contract the model is held to.
-6. `sequence` — one turn end-to-end, including a tool failure.
-7. `trace` — one real transcript, evidence the loop behaves as drawn.
-8. `callout` — the safety boundary the agent cannot cross.
+- The workflow itself → `flow` built from the AI kit in `kit.md`. Draw one
+  node per agent role, model call, tool, store, guard, eval, and human gate
+  that the request names. This is the default for RAG, routers, multi-agent
+  hand-offs, planner–workers–reviewer, and generate–check–repair.
+- Several owners (agents or teams) per step → `swimlane`.
+- Where each piece runs and what it reads → `block` with AI kinds.
+- One turn's timing across services → `sequence`.
+- One agent's loop → `agentloop`, only on the terms in `kit.md`.
+- A real transcript exists → `trace`. A real prompt exists → `prompt`.
+  Measured token budgets exist → `context`. Cost per run → `envelope`.
+- Measured quality → `benchmark` or `stats`; the eval set → `table`.
+- A hard boundary, enforced outside the prompt → one `callout`.
+- Ends on: what the team decides before the next rollout stage — the
+  eval bar, the cap, the human gate — with owners.
 
-Rejected: `flow` for the loop itself (the loop is the primitive, not a
-branch chart) — but a multi-step AI *workflow* is the next recipe.
-
-## AI workflow (RAG, routing, multi-agent, generate → check → repair)
-
-Reader questions: What are the steps? · Which step is a model, a tool, a
-person, or memory? · Where does it branch, retry, or stop?
-
-1. `meta` — the workflow's name and the outcome it produces.
-2. Prose — the trigger and the stop condition in two sentences.
-3. `flow` — the workflow as the request describes it: `kind: llm` for model
-   calls, `agent` for autonomous steps, `tool` for retrieval / APIs / code,
-   `human` for review gates, `memory` for stores, `decision` for routers and
-   checks, `-x->` for the repair path. Shape it from the ask; never reuse a
-   generic loop.
-4. `swimlane` — instead of `flow` when several agents or teams own steps.
-5. `cycle` — the improve-and-re-evaluate loop, when there is one.
-6. `context` or `envelope` — the budget: tokens per turn, or cost per run.
-7. `callout` — what the workflow must never do on its own.
+Traps: a `cycle` with generic stages; a `prompt` or a `trace` with invented
+text.
 
 ## Frontend architecture
 
-Reader questions: What are the modules? · What states can the UI be in? ·
-Where does data come from?
+Questions: What are the modules? · What may import what? · What states can
+the UI be in? · Where does data come from?
 
-1. `meta` — the app and its rendering model in one line.
-2. Prose — the rendering-model decision (SSR/SPA/islands) and its cost.
-3. `frontend` or `felogic` — the module graph. Prose after: the dependency
-   rule the graph must keep.
-4. `wireframe` — the one screen that matters.
-5. `state` — the UI states, error and empty included. Prose after: which
-   state users actually sit in most.
-6. `sequence` — the data-fetch path.
-7. `table` — the routes.
+- A rendering-model decision (SSR, SPA, islands) → prose with its cost.
+- Component nesting → `frontend`; an import rule with edges → `felogic`.
+- The one screen that matters → `wireframe`.
+- UI states, error and empty included → `state`.
+- The data-fetch path → `sequence`. Routes with behaviour → `table`.
+- Ends on: the rule a new screen must follow, then the open questions.
 
-Rejected: `c4` (usually one container — a boundary diagram with one box says
-nothing).
+Trap: `c4` (usually one container; one box says nothing).
 
 ## Data flow / pipeline
 
-Reader questions: Where does data come from and go? · What shape is it at
-rest? · How fresh is it?
+Questions: Where does data come from and go? · Which stage loses or
+changes data? · What shape is it at rest? · How fresh is it?
 
-1. `meta` — the pipeline and what depends on its output.
-2. Prose — why batch or stream; the cost of staleness in user terms.
-3. `dfd` (processes and stores) or `sankey` (when volumes are the story).
-   Prose after: the stage that loses or transforms data.
-4. `erd` — the shape at rest.
-5. `steps` — the backfill / replay procedure an operator runs.
-6. `slo` — the freshness targets the team commits to.
+- Processes and stores → `dfd`; volumes as the story → `sankey`.
+- Zones (bronze → silver → gold) → `block` with `layers`, one node per
+  dataset with `tech` for format and retention.
+- The shape at rest → `erd`. A replay or backfill an operator runs → `steps`.
+- Freshness targets the team commits to → `slo`.
+- Ends on: what a breached target freezes, and who decides to unfreeze.
 
-Rejected: `sequence` (a pipeline has no request/response pairing to draw).
-
-Zone patterns compose — they are not block types. A medallion view
-(bronze → silver → gold) is `block` with `layers`: one layer per zone, one
-node per dataset with `tech` for format and retention, edges for the
-promotions. A deployment topology is `block` with `preset: infra` and
-`groups` for the account and network boundaries.
+Trap: `sequence` (a pipeline has no request/response pairing).
 
 ## State machine
 
-Reader questions: What states exist? · What forces a transition? · What is
-illegal?
+Questions: What states exist? · What forces a transition? · What is illegal?
 
-1. `meta` — the object whose lifecycle this is.
-2. Prose — why these states exist; the invariant the machine protects.
-3. `state` — states and transitions.
-4. `table` — transition × guard × side effect.
-5. `sequence` — one path that exercises the risky transition. Prose after:
-   what a caller observes while it runs.
-6. `callout` — the illegal states, and why they must stay illegal.
+- States and transitions → `state`; guards and side effects per
+  transition → `table`.
+- A risky transition that callers observe → `sequence`.
+- Illegal states that must stay illegal → `spec`.
+- Ends on: the transitions still undecided, with owners.
 
-Rejected: `flow` (flows end; lifecycles loop back).
+Trap: `flow` (flows end; lifecycles loop back).
 
 ## Incident writeup
 
-Reader questions: What happened, when? · Why did it break? · What did it
-cost? · What prevents recurrence?
+Questions: What happened, when? · Why did it break? · What did it cost? ·
+What prevents recurrence?
 
-1. `meta` — incident id, date, severity.
-2. `timeline` — detection to resolution. Prose after: where the response was
-   slow, and why.
-3. `sequence` or `flow` — the failure mechanism, not the happy path.
-4. `stats` — the impact in numbers.
-5. `steps` — remediation, each step with an owner.
-6. `takeaways` — what the organization keeps from the incident.
+- Open with the impact and the cause in two sentences. Present perfect is
+  fine for a state that still holds ("has failed since 09:00").
+- Detection to resolution with times → `timeline`.
+- The failure mechanism, not the happy path → `sequence` or `flow`.
+- Measured impact → `stats`.
+- Ends on: the actions with owners and dates → `statustable`.
 
-Rejected: `scqa` (a postmortem argues with evidence, not narrative).
+Traps: `scqa` (a postmortem argues with evidence, not narrative); a
+`takeaways` block that restates the actions.
 
 ## ADR
 
-Reader questions: What forced a decision? · What were the options? · What did
-we accept by choosing?
+Questions: What forced a decision? · What were the options? · What did we
+accept by choosing?
 
-1. `meta` — the decision's id and title.
-2. Prose (Context) — the forcing fact, with a number in it.
-3. `options` — candidates against the criteria, verdict per card.
-4. `callout` (title "Decision") — the decision in one sentence.
-5. `proscons` — the consequences of the winner, both directions. Prose after:
-   the tradeoff the team explicitly accepts.
-6. `statustable` — the follow-up work the decision creates.
+- `meta.status` (`proposal`, `accepted`, `superseded`) and the decision
+  date in `meta.updated`. A superseding ADR links the old one in its first
+  sentence.
+- The forcing fact, with a number → the opening.
+- Candidates against criteria with a verdict each → `options`.
+- Consequences both ways → `proscons`. Measured before/after → `benchmark`;
+  one metric before/after across many rows → a dumbbell `chart`.
+- Ends on: the follow-up work the decision creates → `statustable`, or,
+  while it is a proposal, the open questions and who decides → `faq`.
 
-Rejected: `harvey` (only when criteria resist numbers) · `scorecard`
-(weights imply a precision most ADRs do not have).
+Traps: `harvey` (only when criteria resist numbers); `scorecard` (weights
+imply a precision most ADRs do not have); a `callout` that repeats the
+decision the opening already states.
 
 ## API reference
 
-Reader questions: What can I call? · What do errors look like? · How do calls
+Questions: What can I call? · What do errors look like? · How do calls
 compose?
 
-1. `meta` — the API and its version.
-2. Prose — auth model, versioning, base URL: what endpoint cards cannot
-   carry.
-3. `endpoint` × N — one card per operation, examples included.
-4. `sequence` — a multi-call workflow. Prose after: the ordering rule the
-   workflow depends on.
-5. `table` — the error codes and what the client should do about each.
-6. `glossary` — the domain terms the paths use.
+- An OpenAPI spec exists → `chiltepin sync openapi`, then edit the output.
+- One card per operation → `endpoint`. A multi-call workflow → `sequence`.
+- Error codes and what the client does → `table`. Domain terms → `glossary`.
+- Ends on: the versioning or deprecation rule the integrator must plan for.
 
-Rejected: `packet` (binary protocols only) · standalone `code` (snippets
-live inside the endpoint cards).
+Traps: `packet` (binary protocols only); standalone `code` (snippets live
+inside the endpoint cards).
+
+## Runbook
+
+Questions: What fired? · What is wrong? · What do I run? · Did it work? ·
+How do I undo it? · Who do I call?
+
+- The trigger: the alert name and the symptom, in the opening.
+- Diagnosis → a `flow` from symptom to cause, one decision per check.
+- The fix → `steps`, with exact commands and a verify step.
+- Rollback → `steps` or one step, before the escalation.
+- Ends on: the escalation — who to page, when, with what.
+
+Trap: an architecture overview inside the runbook; link to it instead.
+
+## Design system
+
+Questions: Which tokens exist? · What does each style look like? · How do
+we use a component? · How mature is each one?
+
+- Colour tokens → `palette`; text styles → `typescale`.
+- Usage rules per component → `dodont`.
+- Component maturity → `inventory`.
+- Ends on: how a new component gets in, and who approves it.
+
+Trap: a `table` of hex values; the `palette` draws the swatches.

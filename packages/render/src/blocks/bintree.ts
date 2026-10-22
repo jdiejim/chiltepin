@@ -2,13 +2,20 @@
  * Renders a `bintree` block — a binary tree in pure SVG inside the diagram
  * frame (tag TREE).
  *
- * Tidy-ish recursive layout: leaves take consecutive in-order slots, a parent
- * centres over its two children, and a single-child parent offsets half a
- * slot toward the occupied side (so unbalanced chains slant instead of
- * stacking). Levels are 64px apart; nodes are 36px circles; edges are `muted`
- * 1.5px lines drawn behind the nodes. Nodes without a parent are roots and
- * lay out side by side. Node tones follow `svg/dsTone.ts`; the legend names
- * the tones in play.
+ * In-order layout: every node takes the next column in an in-order walk, so
+ * a node's x is its rank in sorted order (a BST reads left to right in key
+ * order) and no two nodes can share a column. Columns are half a node apart:
+ * two nodes on one level always have their common ancestor between them, so
+ * they stand at least a full node apart, whatever the shape — a lone child
+ * never lands on its parent's sibling. Nodes without a parent are roots and
+ * lay out side by side.
+ *
+ * Every node is one size, sized from the widest value (a long value is cut
+ * with "…" and kept whole in the node's `<title>`). Levels are spaced from
+ * that size; edges are `muted` 1.5px lines drawn behind the nodes, and every
+ * node sits on an opaque paper disc, so a tinted tone never shows an edge
+ * through it. Node tones follow `svg/dsTone.ts`; the legend names the tones
+ * in play.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -21,20 +28,31 @@ import { diagramFrame } from './frame.js';
 type BintreeData = BlockDataMap['bintree'];
 type Node = NonNullable<BintreeData['nodes']>[number];
 
-const R = 18; // node radius (36px circles)
-const UNIT = 52; // horizontal slot width
-const LEVEL_H = 64;
+/** The smallest node radius (36px circles), and the largest a long value may grow it to. */
+const R_MIN = 18;
+const R_MAX = 38;
+/** A value longer than this is cut with "…" (the node's `<title>` keeps it whole). */
+const MAX_CHARS = 8;
+/** Approximate advance of one 12.5px semibold mono character. */
+const VAL_CH = 7.6;
 const PAD_X = 10;
 const PAD_TOP = 8;
 
-/** Truncates a value so it fits a 36px circle at 12.5px mono. */
-function fit(v: string): string {
-  return v.length > 4 ? `${v.slice(0, 3)}…` : v;
+/** The text a node shows, and whether it was cut. */
+function fit(v: string): { text: string; cut: boolean } {
+  const chars = [...v];
+  return chars.length > MAX_CHARS ? { text: `${chars.slice(0, MAX_CHARS - 1).join('')}…`, cut: true } : { text: v, cut: false };
+}
+
+/** One node radius for the whole tree, from the widest value it shows. */
+export function bintreeRadius(values: readonly string[]): number {
+  const widest = Math.max(0, ...values.map((v) => [...fit(v).text].length * VAL_CH));
+  return Math.min(R_MAX, Math.max(R_MIN, Math.ceil(widest / 2 + 7)));
 }
 
 interface Placed {
   readonly node: Node;
-  readonly x: number; // in slot units (normalized later)
+  readonly x: number; // in-order column (normalized later)
   readonly depth: number;
 }
 
@@ -45,6 +63,12 @@ export function renderBintree(data: BintreeData): string {
     const s = `<svg viewBox="0 0 220 44" width="220" height="44" role="img"><title>Binary tree</title><text x="${PAD_X}" y="26" class="t-sub c-soft">(empty)</text></svg>`;
     return frame(data, s, '');
   }
+
+  const R = bintreeRadius(nodes.map((n) => n.value));
+  // Half a node apart per column, with a little air: same-level nodes are
+  // two columns apart at least, so 2 × UNIT ≥ 2R + 8.
+  const UNIT = R + 6;
+  const LEVEL_H = Math.max(64, 2 * R + 26);
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const children = new Map<string, { left?: Node; right?: Node }>();
@@ -60,30 +84,22 @@ export function renderBintree(data: BintreeData): string {
     children.set(n.parent, slots);
   }
 
-  // In-order layout: leaves consume slots; parents centre (or half-offset).
+  // In-order walk: left subtree, the node, right subtree — one column each.
   const placed = new Map<string, Placed>();
-  let cursor = 0;
-  const place = (n: Node, depth: number): number => {
-    if (placed.has(n.id)) return placed.get(n.id)?.x ?? 0; // cycle guard
+  let column = 0;
+  const visiting = new Set<string>();
+  const place = (n: Node, depth: number): void => {
+    if (placed.has(n.id) || visiting.has(n.id)) return; // cycle guard
+    visiting.add(n.id);
     const kids = children.get(n.id) ?? {};
-    let x: number;
-    if (kids.left !== undefined && kids.right !== undefined) {
-      const lx = place(kids.left, depth + 1);
-      const rx = place(kids.right, depth + 1);
-      x = (lx + rx) / 2;
-    } else if (kids.left !== undefined) {
-      x = place(kids.left, depth + 1) + 0.5;
-    } else if (kids.right !== undefined) {
-      x = place(kids.right, depth + 1) - 0.5;
-    } else {
-      x = cursor;
-      cursor += 1;
-    }
-    placed.set(n.id, { node: n, x, depth });
-    return x;
+    if (kids.left !== undefined) place(kids.left, depth + 1);
+    placed.set(n.id, { node: n, x: column, depth });
+    column += 1;
+    if (kids.right !== undefined) place(kids.right, depth + 1);
+    visiting.delete(n.id);
   };
   roots.forEach((root, i) => {
-    if (i > 0) cursor += 0.8; // gap between side-by-side roots
+    if (i > 0) column += 1; // a free column between side-by-side roots
     place(root, 0);
   });
 
@@ -117,10 +133,14 @@ export function renderBintree(data: BintreeData): string {
     const t = dsTone(n.tone);
     if (n.tone !== undefined) tones.add(n.tone);
     else plain = true;
+    const shown = fit(n.value);
     s +=
       `<g${bp(`nodes.${ni}`)}>` +
+      (shown.cut ? `<title>${escapeHtml(n.value)}</title>` : '') +
+      // The opaque base: a tinted tone must not show the edge beneath it.
+      `<circle cx="${cxOf(p)}" cy="${cyOf(p)}" r="${R}" fill="var(--paper)" stroke="none" class="bt-base"/>` +
       `<circle cx="${cxOf(p)}" cy="${cyOf(p)}" r="${R}"${dsToneAttrs(t)}/>` +
-      `<text x="${cxOf(p)}" y="${cyOf(p) + 4}" class="bt-val" fill="${t.text}"${bp(`nodes.${ni}.value`)}>${escapeHtml(fit(n.value))}</text>` +
+      `<text x="${cxOf(p)}" y="${cyOf(p) + 4}" class="bt-val" fill="${t.text}"${bp(`nodes.${ni}.value`)}>${escapeHtml(shown.text)}</text>` +
       `</g>`;
   });
   s += `</g>`; // close the nodes list container

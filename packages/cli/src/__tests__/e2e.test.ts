@@ -301,6 +301,10 @@ describe.skipIf(skipIfNotBuilt)('chiltepin CLI (built bin)', () => {
     for (const header of ['WORK', 'OUTPUT', 'REFERENCE', 'SETUP']) {
       expect(stdout).toContain(header);
     }
+    // review, shots, and audit sit in the groups like every other command.
+    expect(stdout).toMatch(/WORK +init · new · check · review · studio/);
+    expect(stdout).toMatch(/OUTPUT +html · slides · pdf · shots · build/);
+    expect(stdout).toMatch(/SETUP +sync · audit/);
     expect(stdout).toContain('npx skills add jdiejim/chiltepin');
     expect(stdout).toContain('chiltepin <file.md>');
     expect(stdout).toMatch(/^ {2}block /m);
@@ -385,6 +389,10 @@ describe.skipIf(skipIfNotBuilt)('chiltepin CLI (built bin)', () => {
       const list = await runBin(['new'], tmp);
       expect(list.code).toBe(0);
       expect(list.stdout).toContain('Doc templates:');
+      // Every template name keeps a gap before its description, long names too.
+      const rows = list.stdout.split('Blocks:')[0]?.split('\n').filter((l) => /^ {2}\S/.test(l)) ?? [];
+      expect(rows.length).toBeGreaterThan(5);
+      for (const row of rows) expect(row, row).toMatch(/^ {2}[a-z0-9-]+ {2,}\S/);
       expect(list.stdout).toContain('Blocks:');
 
       // -o writes a file
@@ -504,7 +512,9 @@ describe.skipIf(skipIfNotBuilt)('chiltepin CLI (built bin)', () => {
       expect((await runBin(['build'], tmp)).code).toBe(0);
       const dark = readFileSync(join(tmp, 'dist', 'a.html'), 'utf8');
       expect(dark).not.toMatch(/<html[^>]*data-theme/);
-      expect(dark).toContain('color-scheme:dark');
+      // The skin is written once and linked from every page.
+      expect(dark).toContain('<link rel="stylesheet" href="assets/chiltepin.css">');
+      expect(readFileSync(join(tmp, 'dist', 'assets', 'chiltepin.css'), 'utf8')).toContain('color-scheme:dark');
       writeFileSync(join(tmp, 'chiltepin.config.json'), '{ "docsDir": "docs", "outDir": "dist", "colorScheme": "light" }');
       expect((await runBin(['build'], tmp)).code).toBe(0);
       const light = readFileSync(join(tmp, 'dist', 'a.html'), 'utf8');
@@ -513,6 +523,22 @@ describe.skipIf(skipIfNotBuilt)('chiltepin CLI (built bin)', () => {
       expect(deck).toContain('data-theme="light"');
       expect((await runBin(['html', 'docs/a.md', '-o', 'one.html'], tmp)).code).toBe(0);
       expect(readFileSync(join(tmp, 'one.html'), 'utf8')).toContain('data-theme="light"');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('chiltepin build prints an error-level finding as "error", and still builds', async () => {
+    const tmp = join(tmpdir(), `chiltepin-e2e-${randomBytes(6).toString('hex')}`);
+    mkdirSync(join(tmp, 'docs'), { recursive: true });
+    writeFileSync(join(tmp, 'chiltepin.config.json'), '{ "docsDir": "docs", "outDir": "dist" }');
+    writeFileSync(join(tmp, 'docs', 'a.md'), '```meta\ntitle: A\n```\n\nSee [gone](#nowhere).\n');
+    try {
+      const { code, stderr } = await runBin(['build'], tmp);
+      expect(code).toBe(0);
+      expect(stderr).toMatch(/^error {2}docs\/a\.md:5 {2}E_DANGLING_LINK/m);
+      expect(stderr).not.toMatch(/^warn .*E_DANGLING_LINK/m);
+      expect(stderr).toContain('1 error(s)');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

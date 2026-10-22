@@ -15,6 +15,10 @@
  *   an explicit `col` acting as a floor; steps with no links go after the
  *   last linked column, one column each in author order; two steps that
  *   land on the same cell are pushed right so nothing overlaps.
+ * - Phases — with derived columns, a step that names its `phase` (by label)
+ *   starts no earlier than that phase's first column, and a phase starts
+ *   after the last column of the phase before it, so every step sits under
+ *   its own band. `swimlanePlacements` returns each band's columns.
  *
  * Pure: data in, numbers out. No I/O, no DOM.
  */
@@ -24,6 +28,21 @@ export interface SwimlaneStepInput {
   readonly id: string;
   readonly col?: number | undefined;
   readonly lane: number | string;
+  /** The phase this step belongs to, by the phase's `label`. */
+  readonly phase?: string | undefined;
+}
+
+/** The fields the layout reads from a phase band. */
+export interface SwimlanePhaseInput {
+  readonly label: string;
+  readonly from: number;
+  readonly to?: number | undefined;
+}
+
+/** A phase band's effective columns, 1-based and inclusive. */
+export interface SwimlaneBand {
+  readonly from: number;
+  readonly to: number;
 }
 
 /** The fields the layout reads from a lane. */
@@ -75,6 +94,7 @@ export function resolveSwimlaneLane(
 export function swimlaneColumns(
   steps: ReadonlyArray<SwimlaneStepInput>,
   links: ReadonlyArray<SwimlaneLinkInput>,
+  floors?: ReadonlyArray<number>,
 ): number[] {
   if (steps.every((s) => s.col !== undefined)) return steps.map((s) => s.col as number);
 
@@ -117,7 +137,7 @@ export function swimlaneColumns(
 
   // Longest path in topological order: a step sits one column after the
   // furthest of its predecessors, and never left of the `col` it carries.
-  const rank = steps.map((s, i) => (linked.has(i) ? Math.max(1, s.col ?? 1) : 0));
+  const rank = steps.map((s, i) => (linked.has(i) ? Math.max(1, s.col ?? 1, floors?.[i] ?? 1) : 0));
   for (const u of order.reverse()) {
     for (const v of kept[u] as number[]) {
       rank[v] = Math.max(rank[v] as number, (rank[u] as number) + 1);
@@ -129,11 +149,22 @@ export function swimlaneColumns(
   let next = lastLinked;
   steps.forEach((s, i) => {
     if (linked.has(i)) return;
-    next = Math.max(next + 1, s.col ?? 0);
+    next = Math.max(next + 1, s.col ?? 0, floors?.[i] ?? 0);
     rank[i] = next;
   });
 
   return rank;
+}
+
+/** The index of the phase `ref` names (label, case-insensitive, trimmed), or `undefined`. */
+export function resolveSwimlanePhase(
+  ref: string | undefined,
+  phases: ReadonlyArray<SwimlanePhaseInput>,
+): number | undefined {
+  if (ref === undefined) return undefined;
+  const want = fold(ref);
+  const i = phases.findIndex((p) => fold(p.label) === want);
+  return i >= 0 ? i : undefined;
 }
 
 /**
@@ -145,21 +176,69 @@ export function swimlanePlacements(data: {
   readonly lanes?: ReadonlyArray<SwimlaneLaneInput> | undefined;
   readonly steps?: ReadonlyArray<SwimlaneStepInput> | undefined;
   readonly links?: ReadonlyArray<SwimlaneLinkInput> | undefined;
-}): { readonly placements: SwimlanePlacement[]; readonly derived: boolean } {
+  readonly phases?: ReadonlyArray<SwimlanePhaseInput> | undefined;
+}): { readonly placements: SwimlanePlacement[]; readonly derived: boolean; readonly bands: SwimlaneBand[] } {
   const lanes = data.lanes ?? [];
   const steps = data.steps ?? [];
   const links = data.links ?? [];
+  const phases = data.phases ?? [];
   const derived = steps.some((s) => s.col === undefined);
-  const cols = swimlaneColumns(steps, links);
-  const taken = new Set<string>();
-  const placements = steps.map((s, i) => {
-    const lane = resolveSwimlaneLane(s.lane, lanes) ?? 0;
-    let col = cols[i] ?? 1;
-    if (derived) {
-      while (taken.has(`${col}:${lane}`)) col += 1;
-    }
-    taken.add(`${col}:${lane}`);
-    return { col, lane };
+  const place = (cols: readonly number[]): SwimlanePlacement[] => {
+    const taken = new Set<string>();
+    return steps.map((s, i) => {
+      const lane = resolveSwimlaneLane(s.lane, lanes) ?? 0;
+      let col = cols[i] ?? 1;
+      if (derived) {
+        while (taken.has(`${col}:${lane}`)) col += 1;
+      }
+      taken.add(`${col}:${lane}`);
+      return { col, lane };
+    });
+  };
+  const member = steps.map((s) => resolveSwimlanePhase(s.phase, phases));
+  if (!derived || !member.some((m) => m !== undefined)) {
+    const placements = place(swimlaneColumns(steps, links));
+    return { placements, derived, bands: authorBands(phases, placements) };
+  }
+  // Phase by phase: floor the phase's steps at its first column, lay out
+  // again, and start the next phase after the last column this one uses.
+  const floors = steps.map(() => 0);
+  const bands: SwimlaneBand[] = [];
+  let placements = place(swimlaneColumns(steps, links, floors));
+  let start = 1;
+  phases.forEach((ph, k) => {
+    const lo = Math.max(ph.from, start);
+    member.forEach((m, i) => {
+      if (m === k) floors[i] = lo;
+    });
+    placements = place(swimlaneColumns(steps, links, floors));
+    const cols = placements.filter((_, i) => member[i] === k).map((p) => p.col);
+    const hi = Math.max(lo, ph.to ?? lo, ...cols);
+    bands.push({ from: lo, to: hi });
+    start = hi + 1;
   });
-  return { placements, derived };
+  // The last band runs to the last column.
+  const last = Math.max(1, ...placements.map((p) => p.col));
+  const tail = bands[bands.length - 1];
+  if (tail !== undefined && tail.to < last) bands[bands.length - 1] = { from: tail.from, to: last };
+  return { placements, derived, bands };
+}
+
+/**
+ * The bands as the author wrote them: `from`..`to`; a phase with no `to`
+ * runs to the column before the next phase starts (the last one to the last
+ * column), so an open-ended phase never covers the phases after it.
+ */
+function authorBands(
+  phases: ReadonlyArray<SwimlanePhaseInput>,
+  placements: ReadonlyArray<SwimlanePlacement>,
+): SwimlaneBand[] {
+  const last = Math.max(1, ...placements.map((p) => p.col), ...phases.map((p) => p.to ?? p.from));
+  return phases.map((ph) => {
+    const next = phases
+      .filter((o) => o.from > ph.from)
+      .reduce((m, o) => Math.min(m, o.from), Number.POSITIVE_INFINITY);
+    const to = ph.to ?? (Number.isFinite(next) ? next - 1 : last);
+    return { from: ph.from, to: Math.max(ph.from, to) };
+  });
 }

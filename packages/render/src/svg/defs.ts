@@ -29,8 +29,11 @@ export function globalDefsSvg(): string {
     `<path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>` +
     `<marker id="skOpen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
     `<path d="M1,1 L9,5 L1,9" fill="none" stroke="var(--muted)" stroke-width="1.6"/></marker>` +
-    `<marker id="skErr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
-    `<path d="M0,0 L10,5 L0,10 z" fill="var(--negative)"/></marker>` +
+    // The error head carries a cross on the line just behind it, so an error
+    // edge still reads as one in greyscale and on paper, not by hue alone.
+    `<marker id="skErr" viewBox="-16 0 26 10" refX="9" refY="5" markerWidth="15.6" markerHeight="6" orient="auto-start-reverse">` +
+    `<path d="M0,0 L10,5 L0,10 z" fill="var(--negative)"/>` +
+    `<path d="M-13,1.5 L-6,8.5 M-13,8.5 L-6,1.5" fill="none" stroke="var(--negative)" stroke-width="2" stroke-linecap="round"/></marker>` +
     `<marker id="skAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
     `<path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>` +
     `<filter id="gshadow" x="-20%" y="-20%" width="140%" height="170%">` +

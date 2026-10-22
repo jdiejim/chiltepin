@@ -11,33 +11,54 @@
  * not read as a failure) takes the accent, together with the transitions into
  * it — the success exit reads at a glance. Two or more candidates, or none,
  * means no accent.
+ *
+ * Labels: a transition reads `event [guard]` (UML). A long state name wraps
+ * at spaces, and an identifier (`PAST_DUE_AWAITING_RETRY`, `awaitingRetry`)
+ * breaks after `_` or at a case change; the pill grows a line instead of
+ * overflowing. A self transition is a tall arc over its state with its label
+ * above the apex, so the label never hides the arc. The transition table
+ * (unnamed start / end shown as `● start` / `◉ end`) sits in a closed
+ * `<details>` under the drawing — it repeats the diagram, so it stays one
+ * click away (open when a label fell back to a numeral that points at it).
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { edgeLanes, entryPortOffsets, ortho } from '../svg/ortho.js';
-import { wrapText } from '../svg/wrapText.js';
-import { edgeMask } from '../svg/edgePill.js';
-import { edgeStep, dodge } from '../svg/edgeSteps.js';
-import { GROUP_PADS, gridGroupsSvg, groupExtent, nestingPads } from '../svg/gridGroups.js';
+import { routeEdges } from '../svg/router.js';
+import { settleLabels } from '../svg/edgeLayout.js';
+import { labelForms } from '../svg/edgeSteps.js';
+import { edgeMaskSize } from '../svg/edgePill.js';
+import { gapsForLabels, geometryOf, hasBackEdge, LOOP_PAD, type GeometryReport } from '../svg/geometry.js';
+import { GROUP_PADS, gridGroupsSvg, groupExtent, groupLabelBoxes, groupPanelRects, nestingPads } from '../svg/gridGroups.js';
 import { gridMetaAttrs, nodeCellAttrs } from '../svg/gridMeta.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { revealAttr } from '../svg/reveal.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
-import { ensureGrid } from './autoLayout.js';
+import { autoDir, ensureGrid } from './autoLayout.js';
+import { wrapAll } from './wrapAll.js';
 
 type StateNode = NonNullable<BlockDataMap['state']['states']>[number];
 
 /** A terminal whose name reads as a failure is an error exit, never the accent. */
 const ERR_RE = /\b(error|fail|failed|failure|reject|rejected|cancel|cancelled|canceled|abort|aborted|timeout|timed out|expired|dead)\b/i;
 
-// Long state names wrap (word-aware, ≤3 lines of ~23 chars) so a pill can
-// never grow past its grid cell and overlap a neighbour; the pill gains 15px
-// of height per extra line instead.
+/** True when most letters of `text` are capitals (a SCREAMING_CASE name sets wider). */
+function mostlyCaps(text: string): boolean {
+  const letters = text.replace(/[^A-Za-z]/g, '');
+  return letters.length > 0 && letters.replace(/[^A-Z]/g, '').length / letters.length >= 0.6;
+}
+
+/** Approximate advance of one 13px Inter 600 capital — for extents, never layout. */
+const CAP_W = 9.2;
+
+// Long state names wrap (word-aware, ~23 characters a line, ~20 for capitals)
+// so a pill can never grow past its grid cell and overlap a neighbour; the
+// pill gains 15px of height per extra line instead, and nothing is dropped.
 function nameLines(s: StateNode): string[] {
-  return wrapText(s.name ?? '', 23, 3);
+  const name = s.name ?? '';
+  return wrapAll(name, mostlyCaps(name) ? 20 : 23);
 }
 
 function rectFor(s: StateNode & { col: number; row: number }, cellW: number, cellH: number, gapX: number, gapY: number, padX: number, padTop: number): {
@@ -54,8 +75,9 @@ function rectFor(s: StateNode & { col: number; row: number }, cellW: number, cel
     return { x: cx - 13, y: cy - 13, w: 26, h: 26, cx, cy };
   }
   const lines = nameLines(s);
-  const longest = Math.max(0, ...lines.map((ln) => ln.length));
-  const pw = Math.max(96, Math.min(longest * 8 + 26, cellW + gapX - 26));
+  // Capitals set wider than the 8px average: a caps line is measured as caps.
+  const longest = Math.max(0, ...lines.map((ln) => Math.max(ln.length * 8, mostlyCaps(ln) ? ln.length * CAP_W : 0)));
+  const pw = Math.max(96, Math.min(Math.ceil(longest) + 26, cellW + gapX - 26));
   const ph = 46 + (Math.max(1, lines.length) - 1) * 15;
   return { x: cx - pw / 2, y: cy - ph / 2, w: pw, h: ph, cx, cy };
 }
@@ -68,23 +90,82 @@ function pillCls(kind: StateNode['kind']): string {
 }
 
 export function renderState(data: BlockDataMap['state']): string {
+  return fitState(data).html;
+}
+
+/** Lays out a `state` block in the author's direction, or the one that fits the page (see `autoDir`). */
+function fitState(data: BlockDataMap['state']): { html: string; geometry: GeometryReport } {
+  return autoDir(data, data.states ?? [], layoutState, (r) => r.html);
+}
+
+/** Geometry report for a `state` block (see `geometryReport`). */
+export function stateGeometry(data: BlockDataMap['state']): GeometryReport {
+  return fitState(data).geometry;
+}
+
+/** A transition's label in UML form: the event, then its guard in brackets (`retry [attempts < 4]`). */
+export const transitionLabel = (t: { readonly event: string; readonly guard?: string | undefined }): string =>
+  t.event + (t.guard !== undefined && t.guard.trim() !== '' ? ` [${t.guard.trim()}]` : '');
+
+/** The arc of a self transition rises this far above its state (the label sits above the apex). */
+const LOOP_RISE = 44;
+/** Clear space above a self transition's label when its state is on row 1. */
+const LOOP_HEAD = 6;
+
+/** Lays out and draws a `state` block: the framed HTML plus its geometry report. */
+function layoutState(data: BlockDataMap['state']): { html: string; geometry: GeometryReport } {
   const trans = data.transitions ?? [];
   const rawStates = data.states ?? [];
+  const dir = data.dir ?? 'LR';
   const quick = !(rawStates.length > 0 && rawStates.every((n) => n.col !== undefined && n.row !== undefined));
-  const states = ensureGrid(rawStates, trans, data.dir ?? 'LR');
+  const states = ensureGrid(rawStates, trans, dir);
   const cellW = 168;
-  const cellH = 64;
-  const gapX = 74;
-  const gapY = 60;
+  // A pill of four or more lines grows the one row height (Studio's grid
+  // metadata stays valid); up to three lines fit the 64px cell as before.
+  const tallest = Math.max(0, ...states.map((st) => (st.kind === 'start' || st.kind === 'terminal' ? 0 : 46 + (Math.max(1, nameLines(st).length) - 1) * 15)));
+  const cellH = Math.max(64, tallest - 12);
+  // One column gap and one row gap, wide enough for every transition label.
+  // A pill narrower than its cell leaves that room as slack.
+  const cellOf = (id: string): (typeof states)[number] | undefined => states.find((st) => st.id === id);
+  const baseW = (id: string): number => {
+    const st = cellOf(id);
+    return st === undefined ? cellW : rectFor(st, cellW, cellH, 74, 60, 0, 0).w;
+  };
+  const { gapX, gapY } = gapsForLabels(
+    trans.map((t) => ({ from: t.from, to: t.to, label: transitionLabel(t) })),
+    cellOf,
+    dir,
+    { gapX: 74, gapY: 60 },
+    (a, b) => ({ x: Math.max(0, (cellW - baseW(a)) / 2 + (cellW - baseW(b)) / 2), y: 0 }),
+  );
   const groups = data.groups ?? [];
   // Group outlines overshoot their cells (label headroom): grow the padding
   // to fit them ONLY when groups exist, so group-less docs stay byte-identical.
   // Declared group nesting (`parent`) grows the outermost panels outward; the
   // pads grow with them so a nested group never clips at the viewBox edge.
   const nestPad = nestingPads(groups);
-  const padX = (groups.length > 0 ? GROUP_PADS.padX : 30) + nestPad.padX;
-  const padTop = (groups.length > 0 ? GROUP_PADS.padTop : 30) + nestPad.padTop;
-  const padBot = (groups.length > 0 ? GROUP_PADS.padBot : 20) + nestPad.padBot;
+  // A back transition loops around its row (column in TB): room for the loop.
+  const loop = hasBackEdge(trans, cellOf, dir) ? LOOP_PAD : 0;
+  const padX = (groups.length > 0 ? GROUP_PADS.padX : 30) + nestPad.padX + (dir === 'TB' ? loop : 0);
+  // A self transition on the top row needs room for its arc and label.
+  const loopLift = (ti: number): number => {
+    const label = transitionLabel(trans[ti] ?? { event: '' });
+    const h = Math.max(0, ...labelForms(label).map((lines) => edgeMaskSize(lines).h));
+    return Math.ceil(h / 2) + 3;
+  };
+  // The arc rises LOOP_RISE·¾ over the pill, its label sits above that: the
+  // top pad grows by whatever the arc and label need beyond the default pad.
+  const selfTop = Math.max(
+    0,
+    ...trans.map((t, ti) => {
+      const st = cellOf(t.from);
+      if (t.from !== t.to || st === undefined || st.row !== 1) return 0;
+      const inCell = (cellH - rectFor(st, cellW, cellH, 0, 0, 0, 0).h) / 2;
+      return Math.ceil(LOOP_RISE * 0.75 + 2 * loopLift(ti) + LOOP_HEAD - 30 - inCell);
+    }),
+  );
+  const padTop = (groups.length > 0 ? GROUP_PADS.padTop : 30) + nestPad.padTop + (dir === 'LR' ? loop : 0) + selfTop;
+  const padBot = (groups.length > 0 ? GROUP_PADS.padBot : 20) + nestPad.padBot + (dir === 'LR' ? loop : 0);
   const gx = groupExtent(groups);
   const cols = Math.max(1, ...states.map((s) => s.col), gx.cols);
   const rows = Math.max(1, ...states.map((s) => s.row), gx.rows);
@@ -108,65 +189,87 @@ export function renderState(data: BlockDataMap['state']): string {
   let s = `<svg viewBox="0 0 ${width} ${height}"${a11y.attrs}${gridMeta}>${a11y.title}`;
 
   // Group panels — beneath transitions and states. Only emitted when present.
-  if (groups.length > 0) {
-    const xOf = (c: number): number => padX + (c - 1) * (cellW + gapX);
-    const yOf = (r: number): number => padTop + (r - 1) * (cellH + gapY);
-    s += gridGroupsSvg(groups, { xOf, yOf, cellW, cellH, gapX, gapY, skin: true });
-  }
+  const xOf = (c: number): number => padX + (c - 1) * (cellW + gapX);
+  const yOf = (r: number): number => padTop + (r - 1) * (cellH + gapY);
+  if (groups.length > 0) s += gridGroupsSvg(groups, { xOf, yOf, cellW, cellH, gapX, gapY, skin: true });
 
-  // The shared labelled-edge rule, with a twist: the state block already has a
-  // transition table below the diagram, so at 4+ labelled transitions the
-  // numerals refer to the TABLE rows (which gain a matching № column) instead
-  // of a second step legend.
-  const numbered = trans.length >= 4;
-
-  // edge lines first; collect labels to draw last (on top of everything)
-  const labels: string[] = [];
+  // Every transition is routed around the states; its label sits on it.
+  // A label that fits nowhere falls back to a numeral, and that numeral
+  // points at the transition table's row (which then gains a № column)
+  // instead of a second step legend.
   const used = { plain: false, error: false, accent: false };
-  const lanes = edgeLanes(trans);
-  // Node boxes a numeral must keep clear of: a short transition's midpoint
-  // can land on a neighbouring state and print the badge over its name.
+  const boxOf = (st: (typeof states)[number]): ReturnType<typeof rectFor> =>
+    rectFor(st, cellW, cellH, gapX, gapY, padX, padTop);
+  const bounds = { x: 0, y: 0, w: width, h: height };
+  const geo = { xOf, yOf, cellW, cellH, gapX, gapY };
   const avoid = states.map((st) => {
-    const r = rectFor(st, cellW, cellH, gapX, gapY, padX, padTop);
+    const r = boxOf(st);
     return { x: r.x, y: r.y, w: r.w, h: r.h };
   });
-  const entries = entryPortOffsets(trans, (id) => {
-    const n = byId.get(id);
-    return n !== undefined ? rectFor(n, cellW, cellH, gapX, gapY, padX, padTop) : undefined;
+  const obstacles = groupLabelBoxes(groups, geo);
+  // A self transition keeps its small arc over the state (not a routed
+  // loop); every other transition is routed around the states.
+  const isSelf = (ti: number): boolean => trans[ti]?.from === trans[ti]?.to;
+  const first = routeEdges(
+    states.map((st) => ({ id: st.id, box: boxOf(st), shape: 'round' as const })),
+    trans,
+    { dir, bounds, obstacles, rails: groupPanelRects(groups, geo) },
+  ).map((r, ti) => (isSelf(ti) ? undefined : r));
+  // The label of a self transition sits just above the apex of its arc (the
+  // cubic's apex is 3/4 of the rise), clear of the stroke in either of the
+  // forms the label may take (one line or two).
+  const loopPoints = (st: (typeof states)[number], ti: number): Array<{ x: number; y: number }> => {
+    const r = boxOf(st);
+    const y = Math.floor(r.y - LOOP_RISE * 0.75 - loopLift(ti));
+    return [
+      { x: r.cx - 14, y },
+      { x: r.cx + 14, y },
+    ];
+  };
+  // Labels sit on their transitions; no line runs under another's label.
+  const { routes, labels } = settleLabels({
+    routes: first,
+    meta: trans.map((t, ti) => {
+      const B = byId.get(t.to);
+      if (!byId.has(t.from) || B === undefined) return undefined;
+      const isErr = isErrTerminal(B);
+      const isAccent = !isErr && accentId !== undefined && t.to === accentId;
+      return { label: transitionLabel(t), err: isErr, accent: isAccent, path: `transitions.${ti}`, reveal: ti };
+    }),
+    avoid,
+    obstacles: [...avoid, ...obstacles],
+    bounds,
+    pointsOf: (ti) => {
+      const A = byId.get(trans[ti]?.from ?? '');
+      return isSelf(ti) && A !== undefined ? loopPoints(A, ti) : undefined;
+    },
+    labelOptions: { stepNumber: (ti) => ti + 1, noLegend: true },
+    rails: groupPanelRects(groups, geo),
   });
+  const numbered = labels.fallbackIndex.length > 0;
+
   trans.forEach((t, ti) => {
     const A = byId.get(t.from);
     const B = byId.get(t.to);
     if (!A || !B) return;
-    const label = t.event + (t.guard !== undefined ? ` ${t.guard}` : '');
     const isErr = isErrTerminal(B);
     const isAccent = !isErr && accentId !== undefined && t.to === accentId;
     const stroke = isErr ? 'var(--negative)' : isAccent ? 'var(--accent)' : 'var(--muted)';
     const marker = isErr ? 'skErr' : isAccent ? 'skAccent' : 'skArrow';
     const sw = isAccent ? 1.75 : 1.5;
-    const tone = isErr ? 'error' : isAccent ? 'accent' : 'muted';
     if (isErr) used.error = true;
     else if (isAccent) used.accent = true;
     else used.plain = true;
     // Deck builds: transitions reveal in document order, the label with its arrow.
     const tAttrs = bp(`transitions.${ti}`) + revealAttr(ti);
-    if (t.from === t.to) {
-      const r = rectFor(A, cellW, cellH, gapX, gapY, padX, padTop);
-      s += `<path d="M ${r.cx - 12} ${r.y} C ${r.cx - 30} ${r.y - 32}, ${r.cx + 30} ${r.y - 32}, ${r.cx + 12} ${r.y}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="url(#${marker})"${tAttrs}/>`;
-      const at = { lx: r.cx, ly: r.y - 28 };
-      const mark = numbered ? edgeStep(at, ti + 1, isErr, true) : edgeMask(at, label, tone);
-      labels.push(`<g${tAttrs}>${mark}</g>`);
+    if (isSelf(ti)) {
+      const r = boxOf(A);
+      s += `<path d="M ${r.cx - 14} ${r.y} C ${r.cx - 40} ${r.y - LOOP_RISE}, ${r.cx + 40} ${r.y - LOOP_RISE}, ${r.cx + 14} ${r.y}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="url(#${marker})"${tAttrs}/>`;
       return;
     }
-    const p = ortho(
-      rectFor(A, cellW, cellH, gapX, gapY, padX, padTop),
-      rectFor(B, cellW, cellH, gapX, gapY, padX, padTop),
-      lanes[ti] ?? 0,
-      entries[ti] ?? 0,
-    );
+    const p = routes[ti];
+    if (p === undefined) return;
     s += `<path d="${p.d}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="url(#${marker})"${tAttrs}/>`;
-    const mark = numbered ? edgeStep(dodge(p.lx, p.ly, avoid), ti + 1, isErr, true) : edgeMask(p, label, tone);
-    labels.push(`<g${tAttrs}>${mark}</g>`);
   });
 
   // states
@@ -218,12 +321,31 @@ export function renderState(data: BlockDataMap['state']): string {
   });
   s += `</g>`; // close the states list container
 
-  s += labels.join(''); // labels on top, never crossed by a line
+  s += labels.overlay; // labels on top, never crossed by a line
   s += `</svg>`;
+  const geometry = geometryOf({
+    nodeWord: 'state',
+    edgeWord: 'transition',
+    nodes: states.map((st, si) => ({ id: st.id, name: st.name ?? st.id, path: `states.${si}`, col: st.col, row: st.row })),
+    edges: trans.map((t, ti) => ({ from: t.from, to: t.to, label: transitionLabel(t), path: `transitions.${ti}` })),
+    routes,
+    fallbacks: labels.fallbackIndex,
+    labelBoxes: labels.boxes,
+    nodeBoxes: avoid,
+    quick,
+    dir,
+  });
 
   // transition table — in numbered mode a leading № column mirrors the circled
   // numerals on the diagram, so each arrow reads off its own table row.
-  const name = (id: string): string => byId.get(id)?.name ?? id;
+  // An unnamed start / end reads as its marker word, never its id.
+  const name = (id: string): string => {
+    const st = byId.get(id);
+    if (st?.name !== undefined && st.name !== '') return st.name;
+    if (st?.kind === 'start') return '● start';
+    if (st?.kind === 'terminal') return '◉ end';
+    return id;
+  };
   const numCell = (ti: number): string =>
     numbered ? `<td class="t-num"><span class="edge-step"><b>${ti + 1}</b></span></td>` : '';
   const rows2 = trans
@@ -238,11 +360,15 @@ export function renderState(data: BlockDataMap['state']): string {
         `</tr>`,
     )
     .join('');
+  // The table repeats the diagram, so it starts closed — unless a label fell
+  // back to a numeral that points at its rows.
   const table =
     trans.length > 0
-      ? `<table class="transition-table">` +
+      ? `<details class="st-transitions"${numbered ? ' open' : ''}>` +
+        `<summary class="t-eyebrow">Transition table (${trans.length})</summary>` +
+        `<table class="transition-table">` +
         `<thead><tr>${numbered ? '<th>№</th>' : ''}<th>From</th><th>Event</th><th>Guard</th><th>To</th></tr></thead>` +
-        `<tbody${bl('transitions')}>${rows2}</tbody></table>`
+        `<tbody${bl('transitions')}>${rows2}</tbody></table></details>`
       : '';
 
   const items: LegendItem[] = [];
@@ -256,7 +382,7 @@ export function renderState(data: BlockDataMap['state']): string {
   if (accentId !== undefined) items.push({ swatch: 'node-accent', label: 'success exit' });
   const legend = renderLegend(items);
 
-  return diagramFrame(
+  const html = diagramFrame(
     {
       tag: 'STATE',
       ...(data.title !== undefined ? { title: data.title } : {}),
@@ -266,4 +392,5 @@ export function renderState(data: BlockDataMap['state']): string {
     },
     s,
   );
+  return { html, geometry };
 }

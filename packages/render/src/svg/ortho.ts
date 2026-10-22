@@ -5,6 +5,10 @@
  * The route turns at the midpoint along the dominant axis, so edges read
  * cleanly even when the source and target overlap on one axis.
  *
+ * Kept as a public helper for a single edge between two boxes. It knows
+ * nothing about other nodes: the grid diagram renderers route through the
+ * obstacle-aware router in `router.ts` instead.
+ *
  * Ported from `resources/doc-studio.jsx` `ortho`.
  */
 
@@ -30,11 +34,9 @@ export interface Route {
  * @param B - Target box.
  * @param lane - Perpendicular offset lane (±1) so an A→B / B→A pair renders
  *   as two parallel arrows instead of one line drawn twice. 0 = centered.
- * @param entry - Entry-port offset along B's entry side (px). When several
- *   edges terminate on the same side of the same node, each gets its own
- *   offset (see {@link entryPortOffsets}) so their final segments — and
- *   arrowheads — no longer coincide. 0 = the side's center (the historical
- *   geometry, byte-identical).
+ * @param entry - Entry-port offset along B's entry side (px), so several
+ *   edges into one side do not stack their arrowheads. 0 = the side's
+ *   center (the historical geometry, byte-identical).
  * @returns SVG path data and label midpoint.
  */
 export function ortho(A: Box, B: Box, lane = 0, entry = 0): Route {
@@ -59,79 +61,3 @@ export function ortho(A: Box, B: Box, lane = 0, entry = 0): Route {
   return { d: `M ${sx} ${sy} V ${my} H ${ex} V ${ey}`, lx: (sx + ex) / 2, ly: my };
 }
 
-/**
- * Per-edge lanes for a list of `{from, to}` edges: when the reverse edge also
- * exists, each direction gets its own side (deterministic by id order) so the
- * pair renders as two parallel arrows; unpaired edges stay centered. Self
- * loops are left to each renderer's own loop routing.
- */
-export function edgeLanes(
-  edges: ReadonlyArray<{ readonly from: string; readonly to: string }>,
-): number[] {
-  const dirs = new Set(edges.map((e) => `${e.from}\u0000${e.to}`));
-  return edges.map((e) => {
-    if (e.from === e.to) return 0;
-    if (!dirs.has(`${e.to}\u0000${e.from}`)) return 0;
-    return e.from < e.to ? -1 : 1;
-  });
-}
-
-/** Spacing between neighbouring entry ports on one node side (px). */
-const ENTRY_STEP = 8;
-
-/** Keep the outermost port this far inside the side's corners (px). */
-const ENTRY_MARGIN = 6;
-
-/**
- * Per-edge entry-port offsets: when two or more edges terminate on the same
- * side of the same node, {@link ortho} would give them collinear final
- * segments and stacked arrowheads. This spreads their entry points along that
- * side — centered, {@link ENTRY_STEP}px apart, capped to the side's length —
- * in a deterministic order (by source node id, then edge index). A side with
- * a single incoming edge gets offset 0, so its route is byte-identical to the
- * historical geometry. Self loops are skipped (renderers route them
- * separately).
- *
- * The entry side is derived exactly as {@link ortho} does (dominant axis
- * between box centers), so pass the same boxes here as to `ortho`.
- *
- * @param edges - The edge list, in render order.
- * @param boxOf - Resolves a node id to the box passed to `ortho` for it
- *   (return `undefined` for unknown ids — those edges keep offset 0).
- * @returns One offset per edge, aligned with `edges` by index.
- */
-export function entryPortOffsets(
-  edges: ReadonlyArray<{ readonly from: string; readonly to: string }>,
-  boxOf: (id: string) => Box | undefined,
-): number[] {
-  const groups = new Map<string, { members: Array<{ i: number; from: string }>; span: number }>();
-  edges.forEach((e, i) => {
-    if (e.from === e.to) return;
-    const A = boxOf(e.from);
-    const B = boxOf(e.to);
-    if (A === undefined || B === undefined) return;
-    const dx = B.x + B.w / 2 - (A.x + A.w / 2);
-    const dy = B.y + B.h / 2 - (A.y + A.h / 2);
-    const horizontal = Math.abs(dx) >= Math.abs(dy);
-    const side = horizontal ? (dx >= 0 ? 'L' : 'R') : (dy >= 0 ? 'T' : 'B');
-    const key = `${e.to}\u0000${side}`;
-    const g = groups.get(key) ?? { members: [], span: horizontal ? B.h : B.w };
-    g.members.push({ i, from: e.from });
-    groups.set(key, g);
-  });
-  const out: number[] = edges.map(() => 0);
-  for (const g of groups.values()) {
-    const n = g.members.length;
-    if (n < 2) continue; // single entry keeps today's centered geometry
-    const sorted = [...g.members].sort((p, q) =>
-      p.from < q.from ? -1 : p.from > q.from ? 1 : p.i - q.i,
-    );
-    // Centered spread; shrink the step when the fan would overrun the side.
-    const limit = Math.max(0, g.span / 2 - ENTRY_MARGIN);
-    const step = Math.min(ENTRY_STEP, limit / ((n - 1) / 2));
-    sorted.forEach((m, k) => {
-      out[m.i] = Math.round((k - (n - 1) / 2) * step * 100) / 100;
-    });
-  }
-  return out;
-}

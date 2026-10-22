@@ -99,16 +99,21 @@ Shared SVG utilities live under `packages/render/src/svg/`:
 | Utility | Purpose |
 | --- | --- |
 | `globalDefsSvg()` | Emits the shared `<defs>` (markers + drop-shadow filter) once at the top of every document |
-| `ortho(A, B)` | Manhattan / orthogonal edge routing |
+| `routeEdges(nodes, edges, opts)` | Obstacle-aware orthogonal router for the grid diagrams (`router.ts`): routes never cross a node, edges that share a side spread their ports, back edges loop around their row, parallel runs keep a track apart. Deterministic, integer output |
+| `layoutEdges(…)` | Routes a diagram's edges, sets each label ON its own edge (`edgeLabelLayer`), and moves other routes off the placed labels (`edgeLayout.ts`) |
+| `gapsForLabels(…)` | One uniform column / row gap per grid, wide enough for every edge label (Studio's grid metadata stays valid) |
+| `geometryReport(type, data)` | Public: what a grid diagram's layout could not avoid (feeds `W_GEOMETRY`) |
+| `ortho(A, B)` | Single-edge Manhattan routing between two boxes (public helper; knows nothing about other nodes) |
 | `wrapText(t, max, lines)` | Word-aware line wrapping for diagram labels |
 | `edgePill(p, label, err?)` | Rounded edge-label background |
-| `blockStyle(kind)` | Maps service `kind` → `{accent, fill, text}` |
-| `nodeGlyph(kind, x, y, c)` | Returns small SVG glyph (database cylinder, queue bars, function ƒ, …) |
+| `nodeSkin(kind)` | Maps a node `kind` → its skin: chip, primary / secondary stroke, fill, dash, and family hue (`svg/blockStyle.ts`, with the AI kit) |
+| `nodeGlyph(kind, x, y, c)` | Returns small SVG glyph (database cylinder, queue bars, function ƒ, wrench, gauge, …) |
+| `groupHues(groups, members)` | Picks each group panel's hue: named, else its nodes' family, else the next free hue (`svg/gridGroups.ts`, `svg/hues.ts`) |
 | `GEDGE` | Per-kind edge stroke style table (`solid`/`dashed`/`forbidden`/`error`) |
 
 ## Look and dark mode
 
-There is one look: the editorial skin in `packages/render/src/css.ts` (see `packages/render/DESIGN.md`). Every colour is a role token on `:root` (`--paper`, `--ink`, `--accent`, …); dark is the default. `colorScheme: "light"` stamps `data-theme="light"` on the rendered page; `"system"` adds an OS preference rule.
+There is one look: the editorial skin in `packages/render/src/css.ts` (see `packages/render/DESIGN.md`). Every colour is a role token on `:root` (`--paper`, `--ink`, `--accent`, …); dark is the default. Colour has two channels: six category hues (`--hue-blue` … `--hue-rose`, each with an opaque `-tint`) say what kind of thing a mark is, picked by the renderer from a node's `kind` or a group; the one `--accent` marks the focal answer. `colorScheme: "light"` stamps `data-theme="light"` on the rendered page; `"system"` adds an OS preference rule.
 
 There is no theme choice anywhere — no `chiltepin theme`, no `--theme`, no Studio panel. `packages/render/src/themes.ts` keeps the single-entry shape (`ThemeName = 'textbook'`, label `Editorial`, `themeStyle()` returns `''`) so presets can return without an API change, and `RenderPartsOptions.themeVars` stays as an internal `:root` override with no user surface (the CLI uses it for `--size`).
 
@@ -139,6 +144,15 @@ Stable codes that the CLI can sort, filter, and format:
 | `W_SUSPECT_BLOCK` | warn | Fence tag looks like a typo of a real block type (rendered as plain text; carries a did-you-mean suggestion) |
 | `W_ALIAS_TYPE` | warn | Fence uses one of the 12 permanent alias names (e.g. `waterfall`) — parsed and rendered as its canonical type; informational only |
 | `W_EDGE_LABEL` | warn | A `c4` relationship has no `label` (the C4 notation asks every line to name its intent) |
+| `W_GENERIC_LABEL` | warn | A diagram node, actor, or step carries a placeholder name (`Service A`, `Database`, `API` alone, `Step 1`, `TODO`) instead of the real component's name. `lintGenericLabels` (`core/src/genericLabels.ts`) runs beside `validateDocument` in `chiltepin check`, like the density lint, so the catalog's grammar examples stay validate-clean |
+| `W_GEOMETRY` | warn | A diagram's layout could not avoid a problem: two nodes in one cell, an edge forced through a node, a label with no clear place on its edge, many crossings, a label the renderer had to cut (`label-truncated`), a boundary that would enclose an outsider, or a step whose `phase` names no band. Computed by `chiltepin-render`'s `geometryReport` for every block type, reported by the CLI; the hint names the fix in the block's data |
+| `W_FIT` | warn | A drawing is wider than the stage (it scrolls) or would shrink below about 0.65 of the page column. Computed from the SVG viewBox in the CLI (`commands/fit.ts`), no browser; the hint is per block type |
+| `E_DANGLING_LINK` | error | A Markdown link in prose (`[text](#id)`, `[text](doc#id)`, `[text](./x.md#id)`) names a doc, block id, or heading id that does not exist. Heading ids follow `core/src/slug.ts`, shared with the renderer |
+| `W_ORPHAN_NODE` · `W_EMPTY_GROUP` · `W_DUP_EDGE` | warn | Graph hygiene: a node with no edges in a block that has edges; a group whose cells hold no node; the same edge written twice (`core/src/graphLints.ts`) |
+| `W_DECISION_LABEL` · `W_ERROR_INTO_SUCCESS` · `W_IDLE_ACTOR` | warn | Graph meaning: a `flow` decision with an unlabelled branch; an exit whose edges say the opposite of its name (a success end reached only by `-x->`, a failure end that draws as the happy path); a `sequence` actor in no message |
+| `W_TEMPLATE_ECHO` | warn | A doc keeps a real share of a `chiltepin new` template's example text (`core/src/templateEcho.ts`). Silent when `meta.status` is `example` |
+
+The lints that are not schema checks (`lintGenericLabels`, the density, graph, link, and template-echo lints) run through one `lintDocument()` in core, which both `chiltepin check` and Studio call. `chiltepin review <file>` runs every check, renders each block in light, dark, phone, and print, measures cut and overlapping text, and writes a contact sheet.
 
 Uniform shape: `{ file, line?, level, code, message, value? }`.
 
@@ -156,7 +170,7 @@ The top-level always `process.exit(code)` after `waitUntilExit()`.
 
 The renderer covers all canonical block types. Several of the original post-v1 seams have since shipped as workspace packages:
 
-- **The authoring skill** — one copy, at `skills/chiltepin/` (SKILL.md + reference/), laid out so `npx skills add jdiejim/chiltepin` installs it into any agent. The CLI build copies it to `packages/cli/templates/skill/` (gitignored) for `chiltepin skill`. The block field contract is not written by hand: `chiltepin block <type>` prints it from the zod schema (`core/src/blocks/contract.ts`), plus one hand-kept table of terse-form hints that a test pins to the grammar table in `normalize.ts`.
+- **The authoring skill** — one copy, at `skills/chiltepin/` (SKILL.md + reference/), laid out so `npx skills add jdiejim/chiltepin` installs it into any agent. The CLI build copies it to `packages/cli/templates/skill/` (gitignored) for `chiltepin skill`. The block field contract is not written by hand: `chiltepin block <type>` prints it from the zod schema (`core/src/blocks/contract.ts`) — including the "Field notes" a schema carries with `.describe()` for a free-string field whose vocabulary the renderer owns (a block node `kind`, a group `color`) — plus one hand-kept table of terse-form hints that a test pins to the grammar table in `normalize.ts`.
 - **`chiltepin-studio`** — the visual editor served by `chiltepin studio` (see the layering rules above).
 - **Importers** — `packages/core/src/import/`: pure external-source importers (OpenAPI → whole docs, CSV → `table`/`statustable`/`chart` fences) plus the small importer registry (`IMPORTERS` / `importerForFile`). Exposed as `chiltepin sync openapi` / `chiltepin sync csv` and the studio’s drag-drop / “Import…” flow.
 

@@ -18,6 +18,8 @@ import {
   type SingleFormat,
 } from './commands/single.js';
 import { runDemo } from './commands/demo.js';
+import { runShots } from './commands/shots.js';
+import { formatReview, runReview } from './commands/review.js';
 import { DemoApp, type DemoPick } from './commands/DemoApp.js';
 import { runBuild } from './commands/build.js';
 import { runServe } from './commands/serve.js';
@@ -316,8 +318,9 @@ export async function main(argv: readonly string[]): Promise<number> {
       // Bare `chiltepin new`, non-TTY: list every name (script-safe).
       if (!isInteractive) {
         console.log('Doc templates:');
+        const nameWidth = Math.max(...Object.keys(DOC_TEMPLATE_INFO).map((n) => n.length)) + 2;
         for (const [name, info] of Object.entries(DOC_TEMPLATE_INFO)) {
-          console.log(`  ${name.padEnd(14)}${info.description}`);
+          console.log(`  ${name.padEnd(nameWidth)}${info.description}`);
         }
         console.log('\nBlocks:');
         for (const fam of BLOCK_FAMILIES) {
@@ -359,19 +362,17 @@ export async function main(argv: readonly string[]): Promise<number> {
         ...(opts.out !== undefined ? { out: opts.out } : {}),
         ...(opts.richIndex !== undefined ? { richIndex: opts.richIndex } : {}),
       });
-      // Schema/ref findings are warnings here — `chiltepin check` stays the gate.
-      // A render failure (E_RENDER) is an error: it names the document and the
-      // block, the rest of the build still ran, and the exit code is 1.
+      // Each finding prints at its own level. Only a render failure (E_RENDER)
+      // fails the build: it names the document and the block, the rest of the
+      // build still ran, and the exit code is 1. `chiltepin check` stays the gate.
       if (result.diagnostics.length > 0) {
         for (const d of result.diagnostics) {
           const loc = d.line !== undefined ? `${d.file}:${d.line}` : d.file;
-          const fatal = d.code === 'E_RENDER' || d.code === 'E_ENCODING';
-          const line = `${fatal ? 'error' : 'warn '}  ${loc}  ${d.code}  ${d.message}`;
-          console.error(fatal ? pc.red(line) : pc.yellow(line));
+          const error = d.level === 'error';
+          const line = `${error ? 'error' : 'warn '}  ${loc}  ${d.code}  ${d.message}`;
+          console.error(error ? pc.red(line) : pc.yellow(line));
         }
-        const errors = result.diagnostics.filter(
-          (d) => d.code === 'E_RENDER' || d.code === 'E_ENCODING',
-        ).length;
+        const errors = result.diagnostics.filter((d) => d.level === 'error').length;
         const warnings = result.diagnostics.length - errors;
         const parts: string[] = [];
         if (errors > 0) parts.push(`${errors} error(s)`);
@@ -380,13 +381,17 @@ export async function main(argv: readonly string[]): Promise<number> {
           (errors > 0 ? pc.red : pc.yellow)(`${parts.join(', ')} — run \`chiltepin check\` for details`),
         );
       }
+      for (const m of result.missingAssets) {
+        console.error(pc.yellow(`warn   ${m}  image not found (a page links to it)`));
+      }
       const bytes = result.pages.reduce((sum, p) => sum + p.bytes, 0);
       // Decks are companion views, not documents — report them separately so
       // "page(s)" keeps meaning index + one per doc.
       const decks = result.pages.filter((p) => p.path.endsWith('.slides.html')).length;
       const deckPart = decks > 0 ? ` + ${decks} deck(s)` : '';
+      const imagePart = result.assets.length > 0 ? ` + ${result.assets.length} image(s)` : '';
       console.log(
-        `${pc.green('✓')} ${result.pages.length - decks} page(s)${deckPart} → ${result.outDirRel}/ ${pc.dim(`(${bytes} bytes)`)}`,
+        `${pc.green('✓')} ${result.pages.length - decks} page(s)${deckPart}${imagePart} → ${result.outDirRel}/ ${pc.dim(`(${bytes} bytes)`)}`,
       );
       // Pruning: only files the previous build recorded as its own are removed.
       if (result.removed.length > 0) {
@@ -664,6 +669,69 @@ export async function main(argv: readonly string[]): Promise<number> {
   single('html', 'Render one document to a standalone HTML file');
   single('slides', 'Render one document to a self-contained slide deck');
   single('pdf', 'Render one document to a PDF (needs Chromium once)');
+
+  // `chiltepin shots <input> [-o dir] [--json]` — one PNG per diagram, so the
+  // author (or an agent) can look at what the renderer drew.
+  program
+    .command('shots <input>')
+    .description('Write one PNG per diagram in a document, and flag drawings that scroll or shrink on the page (needs Chromium once)')
+    .option('-o, --output <dir>', 'output folder (default: a temp folder per document)')
+    .option('--json', 'print the result as JSON')
+    .action(async (input: string, opts: { output?: string; json?: boolean }) => {
+      const { dir, shots } = await runShots({
+        cwd: process.cwd(),
+        input,
+        ...(opts.output !== undefined ? { output: opts.output } : {}),
+      });
+      if (opts.json === true) {
+        console.log(JSON.stringify({ dir, shots }, null, 2));
+        return;
+      }
+      if (shots.length === 0) {
+        console.log(`${input} has no diagrams.`);
+        return;
+      }
+      console.log(`${pc.green('Wrote')} ${String(shots.length)} diagram image(s) to ${dir}`);
+      for (const s of shots) {
+        const name = s.title !== undefined ? `${s.tag} · ${s.title}` : s.tag;
+        console.log(`  ${String(s.index).padStart(2)}  ${name}\n      ${s.path}`);
+        if (s.advice !== undefined) console.log(`      ${pc.yellow('fit')}  ${s.advice}`);
+      }
+    });
+
+  // `chiltepin review <file> [-o dir] [--json]` — the one review step after a
+  // draft: every check diagnostic, plus what the reader sees in every block
+  // (fit, cut text, text on text, tiny text, print), a contact sheet, and one
+  // line per issue with the fix in the YAML. Exit 1 on an error-level issue.
+  program
+    .command('review <file>')
+    .description(
+      'Review one document as a reader sees it: check diagnostics plus fit, cut, overlap, tiny, and print issues per block, with a contact sheet (needs Chromium once)',
+    )
+    .option('-o, --output <dir>', 'output folder (default: a temp folder per document)')
+    .option('--json', 'print the review as JSON')
+    .action(async (file: string, opts: { output?: string; json?: boolean }) => {
+      const result = await runReview({
+        cwd: process.cwd(),
+        input: file,
+        ...(opts.output !== undefined ? { output: opts.output } : {}),
+        log: (m) => console.error(m),
+      });
+      if (opts.json === true) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        const plain = !isInteractive;
+        process.stdout.write(
+          formatReview(
+            result,
+            plain
+              ? undefined
+              : { red: pc.red, yellow: pc.yellow, green: pc.green, dim: pc.dim, bold: pc.bold, cyan: pc.cyan },
+          ),
+        );
+      }
+      exitCode = result.exitCode;
+    });
 
   // `chiltepin demo [family] [-s]` — render the bundled showcase doc (all blocks, or
   // one family) and open it (-s = slides). Bare TTY invocation shows a picker.

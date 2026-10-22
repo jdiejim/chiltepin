@@ -49,12 +49,33 @@ function extractId(data: unknown): string | undefined {
 
 function extractMeta(data: unknown): MetaData | undefined {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return undefined;
-  const d = data as { title?: unknown; subtitle?: unknown; tag?: unknown; logo?: unknown };
+  const d = data as {
+    title?: unknown;
+    subtitle?: unknown;
+    tag?: unknown;
+    logo?: unknown;
+    status?: unknown;
+    owners?: unknown;
+    reviewers?: unknown;
+    updated?: unknown;
+    version?: unknown;
+  };
   const meta: { -readonly [K in keyof MetaData]: MetaData[K] } = {};
   if (typeof d.title === 'string') meta.title = d.title;
   if (typeof d.subtitle === 'string') meta.subtitle = d.subtitle;
   if (typeof d.tag === 'string') meta.tag = d.tag;
   if (typeof d.logo === 'string') meta.logo = d.logo;
+  if (typeof d.status === 'string') meta.status = d.status;
+  const names = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : undefined;
+  const owners = names(d.owners);
+  if (owners !== undefined && owners.length > 0) meta.owners = owners;
+  const reviewers = names(d.reviewers);
+  if (reviewers !== undefined && reviewers.length > 0) meta.reviewers = reviewers;
+  if (typeof d.updated === 'string') meta.updated = d.updated;
+  if (typeof d.version === 'string' || (typeof d.version === 'number' && Number.isFinite(d.version))) {
+    meta.version = String(d.version);
+  }
   return Object.keys(meta).length > 0 ? meta : undefined;
 }
 

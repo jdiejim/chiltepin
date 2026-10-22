@@ -1,0 +1,15 @@
+---
+'chiltepin-core': minor
+'chiltepin': minor
+'chiltepin-studio': patch
+---
+
+New command `chiltepin review <file> [-o <dir>] [--json]`. It runs every `check` diagnostic for the file, then renders the doc in Chromium and looks at every block in light and dark at 1280 px, at 400 px, and in print. It prints one line per issue with the block number, its title, the part of the data, and the fix in the YAML. Issue kinds are `fit`, `cut`, `overlap`, `tiny`, `print`, and `check`. A cut finds text the renderer dropped, with or without "…". It writes `contact-sheet.png` (every block, numbered, light above dark, issues badged), one PNG per block and theme, the 400 px page, and `review.json`. It exits 1 on an error: a check error, cut text, or text on text. `shots` uses the same fit thresholds.
+
+New `check` lints, from one exported `lintDocument()` that `chiltepin check` and Studio both run: `W_ORPHAN_NODE`, `W_EMPTY_GROUP`, `W_DUP_EDGE`, `W_DECISION_LABEL`, `W_ERROR_INTO_SUCCESS`, `W_IDLE_ACTOR` (`graphLints.ts`), `W_TEMPLATE_ECHO` (a doc that keeps most of a `chiltepin new` template's example text), and `W_FIT` (a drawing that scrolls past 1600 px or shrinks below 65% of its size, with a data fix per block type). `W_GENERIC_LABEL` also flags editor defaults (`New node`, `New group 3`) and group labels. The prose lint flags meta phrases ("The request names no model", "as requested", "the closing list"), and it allows the present perfect with `since` or `for` in incident and status prose.
+
+Prose links are checked and built. `[text](#anchor)`, `[text](other-doc#anchor)`, and `[text](./other.md#anchor)` must name a doc, a block id, a heading id, or a figure anchor, else `E_DANGLING_LINK` (an error). `check` of one file resolves links against the whole docs folder. New core exports: `headingSlug` and `headingIds` (`slug.ts`), `markdownHeadings`, `docAnchors`, `proseLinks`, `resolveLinkTarget`, `lintLocalLinks`, `lintGraphs`, `lintTemplateEcho`, `lintDocument`.
+
+`chiltepin build` makes a site that works like documentation. Prose links and ref chips point at the built pages, on the page and in the deck. Local images and `meta.logo` are copied into the output. The index and the sidebar group the docs by top folder, then by tag. The sidebar lists the current doc's headings, has a filter box over every title and heading (`search.json`), and folds into a menu under 900 px. The Doc | Slides toggle sits in a bar above the cover, so it no longer covers the tag. Nav and toggle do not print. The stylesheet and the script are written once (`assets/chiltepin.css`, `assets/chiltepin.js`). Index cards render Markdown in subtitles. `build` prints each finding at its own level and counts bytes in UTF-8.
+
+`chiltepin --help` lists `review`, `shots`, and `audit` in its groups. `chiltepin new` pads long template names. The `audit` next step names a real command. The single-file `chiltepin skill` says that the worked derivations are repo-only. `stats` items take `better: up|down`, and the doc templates use it instead of a false `trend`.

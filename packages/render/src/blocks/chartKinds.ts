@@ -1,6 +1,6 @@
 /**
  * The statistical `chart` kinds — `histogram`, `bell`, `boxplot`, `pareto`,
- * `bullet` — split out of `chart.ts` so the file stays readable. Same skin:
+ * `bullet`, `dumbbell` — split out of `chart.ts` so the file stays readable. Same skin:
  * `rule` hairlines on a `rule-solid` baseline, `.t-sub` tick labels in `soft`,
  * `.t-arrow` value labels on the paper halo, `ink` for the one series, and
  * the accent spent on one answer per drawing (the mean, the median, the vital
@@ -14,13 +14,16 @@ import { bl, bp } from '../paths.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { marksOf, type Mark } from '../svg/dsTone.js';
 import { DECORATIVE } from '../svg/decorative.js';
+import { countPhrase, svgName } from '../svg/svgTitle.js';
+import { FONT, cutTitle, fitText, textWidth } from '../svg/wrapText.js';
 import type { Drawn } from './chart.js';
-import { fmt, niceNear, niceStep, niceTicks, numScale, pos, r1, svgOpenSize } from './chartScale.js';
+import { MINUS, axisFormat, compactNum, fmt, isByteUnit, niceNear, niceStep, niceTicks, numScale, pos, r1, svgOpenSize } from './chartScale.js';
 
 type ChartData = BlockDataMap['chart'];
 type Box = NonNullable<ChartData['boxes']>[number];
 type Bullet = NonNullable<ChartData['bullets']>[number];
 type Marker = NonNullable<ChartData['markers']>[number];
+type Series = NonNullable<ChartData['series']>[number];
 
 /** Rough width of one `.t-sub` / `.t-arrow` mono glyph, for fitting labels. */
 const MONO_W = 6;
@@ -578,8 +581,9 @@ export function renderBullet(data: ChartData): Drawn {
   rows.forEach((b, i) => {
     const y = top + i * BU_ROW;
     const mid = y + 14;
+    // The bar is clamped to the scale; every printed number is the true value.
     const value = pos(b.value);
-    const tip = `${b.label} — ${fmt(value, data.unit)}${b.target !== undefined ? ` of target ${fmt(b.target, data.unit)}` : ''}`;
+    const tip = `${b.label} — ${fmt(b.value, data.unit)}${b.target !== undefined ? ` of target ${fmt(b.target, data.unit)}` : ''}`;
     s += `<g${bp(`bullets.${i}`)}><title>${escapeHtml(tip)}</title>`;
     // Label.
     const text = cut(b.label, labelChars);
@@ -599,7 +603,7 @@ export function renderBullet(data: ChartData): Drawn {
     // The measure.
     const vx = X(value);
     const barColor = marks[i] === 'negative' ? 'var(--negative)' : 'var(--accent)';
-    s += `<rect class="chart-measure" x="${x0}" y="${mid - 4}" width="${r1(Math.max(vx - x0, value > 0 ? 1 : 0))}" height="8" fill="${barColor}"${bp(`bullets.${i}.value`)}><title>${escapeHtml(`${b.label} ${fmt(value, data.unit)}`)}</title></rect>`;
+    s += `<rect class="chart-measure" x="${x0}" y="${mid - 4}" width="${r1(Math.max(vx - x0, value > 0 ? 1 : 0))}" height="8" fill="${barColor}"${bp(`bullets.${i}.value`)}><title>${escapeHtml(`${b.label} ${fmt(b.value, data.unit)}`)}</title></rect>`;
     // The target tick.
     let textX = vx + 6;
     if (b.target !== undefined && Number.isFinite(b.target)) {
@@ -609,7 +613,7 @@ export function renderBullet(data: ChartData): Drawn {
       // The value text steps past a target tick that sits just after the bar.
       if (tx >= vx - 2 && tx < textX + 4) textX = tx + 6;
     }
-    s += `<text x="${r1(textX)}" y="${mid + 3.5}" class="t-arrow c-ink">${escapeHtml(fmt(value, data.unit))}</text>`;
+    s += `<text x="${r1(textX)}" y="${mid + 3.5}" class="t-arrow c-ink">${escapeHtml(fmt(b.value, data.unit))}</text>`;
     s += `</g>`;
   });
   s += `</g></svg>`;
@@ -619,4 +623,403 @@ export function renderBullet(data: ChartData): Drawn {
   if (bands > 0) legend.push({ swatch: 'node-fill2', label: 'qualitative ranges (darkest = poorest)' });
   if (marks.includes('negative')) legend.push({ swatch: 'fill', fill: 'var(--negative)', label: 'negative' });
   return { svg: s, legend: renderLegend(legend, 'bullets') };
+}
+
+// ─── kind: dumbbell ──────────────────────────────────────────────────────────
+// One row per label, one dot per series on a shared value axis, and a
+// connector from the lowest dot of the row to the highest. The first series
+// is the baseline in a neutral grey, the last is the answer in the accent, and
+// a series between them takes a category hue. The value column reads
+// "first → last" in mono, the last value bold in its series colour, then a
+// signed change (`+1.5`, `−0.4`): the sign, not a colour, says which way the
+// row moved, so a fall reads as clearly as a rise. The axis runs `min` → `max`
+// when the author gives them, else over a nice domain from the data that takes
+// in 0 only when the data sits near it. A value past an authored end sits on
+// that end with an outward chevron and still prints its true value. Dots that
+// would cover each other split above and below the track, each at its true x.
+
+/** A one-line row, px. */
+const DB_ROW = 28;
+/** Baseline-to-baseline distance of a wrapped row label (13px name). */
+const DB_LINE_H = 15;
+/** Dot radius. */
+const DB_R = 5;
+/** The widest label column; a longer label wraps. */
+const DB_LABEL_MAX = 168;
+/** The most lines a row label takes before it is cut (and reported). */
+const DB_LABEL_LINES = 4;
+/** Gap between the label column, the track and the value column: room for an end dot and its chevron. */
+const DB_GAP = 18;
+/** Left and right margin of the drawing (keeps the text halo inside the viewBox). */
+const DB_PAD = 4;
+/**
+ * The drawing width the track stretches or shrinks toward. At 540 the whole
+ * figure fits a 400 px phone at the stage's 0.62 floor, with no sideways
+ * scroll, and the 13px row labels stay above 8 px.
+ */
+const DB_TARGET_W = 540;
+const DB_TRACK_MIN = 220;
+const DB_TRACK_MAX = 340;
+/** Dots closer than this, centre to centre (px), split above and below the track. */
+const DB_CLASH = 2 * DB_R - 2;
+/**
+ * The hues a series between the first and the last takes, in order. Amber
+ * comes last: next to the orange accent it is the pair `DESIGN.md` warns of.
+ */
+const DB_HUES = ['blue', 'violet', 'teal', 'green', 'rose', 'amber'] as const;
+
+/** The value axis of a dumbbell: its two ends and the tick values on it. */
+export interface DumbbellScale {
+  readonly lo: number;
+  readonly hi: number;
+  readonly ticks: readonly number[];
+}
+
+/** Nice ticks inside [lo, hi], plus either end that sits half a step or more from its nearest tick. */
+function ticksIn(lo: number, hi: number): number[] {
+  const step = niceStep(hi - lo);
+  const start = Math.ceil(lo / step - 1e-9) * step;
+  const ticks: number[] = [];
+  for (let i = 0; start + i * step <= hi + step * 1e-6; i++) ticks.push(tidy(start + i * step) + 0);
+  const first = ticks[0];
+  if (first === undefined || first - lo >= step / 2) ticks.unshift(tidy(lo));
+  const last = ticks[ticks.length - 1] ?? lo;
+  if (hi - last >= step / 2) ticks.push(tidy(hi));
+  return ticks;
+}
+
+/**
+ * The shared value axis. `min` and `max` are the author's ends; a missing end
+ * comes from the data, snapped to a nice step. A data-driven floor drops to 0
+ * only when the data sits nearer 0 than a third of its own span — otherwise
+ * 0 would squeeze every difference into a corner.
+ */
+export function dumbbellScale(values: readonly number[], min?: number, max?: number): DumbbellScale {
+  const xs = finite(values);
+  let floor = min !== undefined && Number.isFinite(min) ? min : undefined;
+  let ceil = max !== undefined && Number.isFinite(max) ? max : undefined;
+  if (floor !== undefined && ceil !== undefined) {
+    if (ceil > floor) return { lo: floor, hi: ceil, ticks: ticksIn(floor, ceil) };
+    floor = undefined;
+    ceil = undefined;
+  }
+  let a = floor ?? (xs.length > 0 ? Math.min(...xs) : 0);
+  let b = ceil ?? (xs.length > 0 ? Math.max(...xs) : 1);
+  if (floor === undefined && a > 0 && a < (b - a) / 3) a = 0;
+  if (ceil === undefined && b < 0 && -b < (b - a) / 3) b = 0;
+  if (!(b > a)) {
+    // One value (or an author end past all the data): open a window around it.
+    const pad = a !== 0 ? Math.abs(a) * 0.1 : 1;
+    if (floor === undefined && ceil === undefined) {
+      a -= pad;
+      b += pad;
+    } else if (floor === undefined) {
+      a = b - 2 * pad;
+    } else {
+      b = a + 2 * pad;
+    }
+  }
+  const step = niceStep(b - a);
+  // `+ 0` turns a -0 (a ceiling rounded up to zero) into 0.
+  const lo = floor ?? tidy(Math.floor(a / step + 1e-9) * step) + 0;
+  const hi = ceil ?? tidy(Math.ceil(b / step - 1e-9) * step) + 0;
+  return { lo, hi, ticks: ticksIn(lo, hi) };
+}
+
+/** Decimal places of `v` as written, at most 2. */
+function decimalsOf(v: number): number {
+  const s = String(Math.round(Math.abs(v) * 100) / 100);
+  const dot = s.indexOf('.');
+  return s.includes('e') || dot < 0 ? 0 : s.length - dot - 1;
+}
+
+/** `v` to exactly `dp` decimals, thousands grouped, with a true minus (`−1,204.50`). */
+function fixedNum(v: number, dp: number): string {
+  const [int = '0', frac] = Math.abs(v).toFixed(dp).split('.');
+  const text = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac !== undefined ? `.${frac}` : '');
+  return (v < 0 && /[1-9]/.test(text) ? MINUS : '') + text;
+}
+
+/** A change with its sign: `+1.5`, `−0.4`, or `±0.0` when nothing moved. */
+function signed(d: number, abs: string): string {
+  if (!/[1-9]/.test(abs)) return `±${abs}`;
+  return `${d < 0 ? MINUS : '+'}${abs}`;
+}
+
+/** How the value column prints numbers. */
+interface DbFormat {
+  /** A value, unit included. */
+  readonly val: (v: number) => string;
+  /** A value with no unit (the first of a pair; the unit follows the last). */
+  readonly bare: (v: number) => string;
+  /** A signed change, no unit: `+1.5`, `−90`. */
+  readonly delta: (d: number) => string;
+}
+
+/**
+ * One number vocabulary per chart: every value to the same decimals as the
+ * most precise one (`5.0` beside `3.5`, so the column lines up), compact past
+ * 10,000 (`1.25M`), and a byte unit scaled the way the axis scales it.
+ */
+function dumbbellFormat(values: readonly number[], ticks: readonly number[], unit: string | undefined): DbFormat {
+  if (isByteUnit(unit)) {
+    const val = (v: number): string => compactNum(v, unit);
+    return { val, bare: val, delta: (d) => signed(d, compactNum(Math.abs(d), unit)) };
+  }
+  const suffix = (num: string): string =>
+    unit === undefined || unit === '' ? num : /[kMBT]$/.test(num) && /^[A-Za-z]/.test(unit) ? `${num} ${unit}` : `${num}${unit}`;
+  const top = Math.max(0, ...values.map(Math.abs), ...ticks.map(Math.abs));
+  const bare =
+    top >= 1e4
+      ? (v: number): string => compactNum(v, undefined, 1e3)
+      : ((dp) => (v: number): string => fixedNum(v, dp))(Math.min(2, Math.max(0, ...values.map(decimalsOf))));
+  return { val: (v) => suffix(bare(v)), bare, delta: (d) => signed(d, bare(Math.abs(d))) };
+}
+
+/** How one series draws: its dot colour and the text class of a value printed in it. */
+export interface DbPaint {
+  readonly color: string;
+  readonly text: string;
+}
+
+/**
+ * The colour of each series. One series is `ink` (nothing to tell apart).
+ * Of several, the focal one — the series the author flagged with `accent`,
+ * else the last — takes the accent; the first is the neutral baseline; any
+ * other takes a category hue. `accent: red` marks a series `negative`.
+ */
+export function dumbbellPaints(series: ReadonlyArray<Pick<Series, 'accent'>>): DbPaint[] {
+  const k = series.length;
+  const marks = marksOf(series.map((s) => s.accent));
+  const flagged = marks.indexOf('focal');
+  const focal = flagged >= 0 ? flagged : k - 1;
+  let h = 0;
+  return series.map((_s, i) => {
+    if (marks[i] === 'negative') return { color: 'var(--negative)', text: 'c-negative' };
+    if (k === 1) return { color: 'var(--ink)', text: 'c-ink' };
+    if (i === focal) return { color: 'var(--accent)', text: 'c-accent' };
+    if (i === 0) return { color: 'var(--soft)', text: 'c-soft' };
+    const hue = DB_HUES[h++ % DB_HUES.length] ?? 'blue';
+    return { color: `var(--hue-${hue})`, text: `c-${hue}` };
+  });
+}
+
+/** One dot as drawn: its series, true value, x, vertical split, and which end it ran past (−1, 0, 1). */
+interface DbDot {
+  readonly si: number;
+  readonly v: number;
+  readonly x: number;
+  readonly out: -1 | 0 | 1;
+  dy: number;
+}
+
+/** The runs of dots closer than {@link DB_CLASH} to their neighbour, left to right. */
+function clashRuns(dots: readonly DbDot[]): DbDot[][] {
+  const runs: DbDot[][] = [];
+  let run: DbDot[] = [];
+  for (const d of [...dots].sort((a, b) => a.x - b.x || a.si - b.si)) {
+    const prev = run[run.length - 1];
+    if (prev !== undefined && d.x - prev.x >= DB_CLASH) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(d);
+  }
+  if (run.length > 0) runs.push(run);
+  return runs;
+}
+
+/** The row height a run of `m` split dots needs, px. */
+const splitNeed = (m: number): number => (m - 1) * (2 * DB_R + 1) + 2 * DB_R + 6;
+
+/**
+ * Splits dots that would cover each other: each run of dots closer than
+ * {@link DB_CLASH} spreads above and below the track, first series on top.
+ * Every dot keeps its true x; only the vertical moves, inside the row.
+ */
+function splitDots(dots: DbDot[], rowH: number): void {
+  for (const run of clashRuns(dots)) {
+    const m = run.length;
+    if (m < 2) continue;
+    const step = Math.min(2 * DB_R + 1, (rowH - 2 * DB_R - 6) / (m - 1));
+    [...run].sort((a, b) => a.si - b.si).forEach((d, j) => {
+      d.dy = r1((j - (m - 1) / 2) * step);
+    });
+  }
+}
+
+export function renderDumbbell(data: ChartData): Drawn {
+  const series: readonly Series[] = data.series ?? [];
+  const k = series.length;
+  // Rows are the labels; with none, the longest series numbers them (1, 2, 3, …).
+  const tagLabels = (data.labels?.length ?? 0) > 0;
+  const n = tagLabels ? (data.labels?.length ?? 0) : Math.max(0, ...series.map((sr) => sr.values.length));
+  const labels = tagLabels ? (data.labels ?? []) : Array.from({ length: n }, (_v, i) => String(i + 1));
+  const valueAt = (si: number, ri: number): number | undefined => {
+    const v = series[si]?.values[ri];
+    return v !== undefined && Number.isFinite(v) ? v : undefined;
+  };
+  const all = series.flatMap((sr) => finite(sr.values.slice(0, n)));
+  const sc = dumbbellScale(all, data.min, data.max);
+  const tick = axisFormat(sc.ticks, data.unit);
+  const f = dumbbellFormat(all, sc.ticks, data.unit);
+  const paints = dumbbellPaints(series);
+  const paintOf = (si: number): DbPaint => paints[si] ?? { color: 'var(--ink)', text: 'c-ink' };
+
+  // The value column: "first → last" and the change, three right-aligned
+  // columns so digits line up row to row. One series prints its value alone.
+  const cols = labels.map((_l, i) => {
+    const a = valueAt(0, i);
+    if (k < 2) return { a: a !== undefined ? f.val(a) : '–', b: '', d: '' };
+    const b = valueAt(k - 1, i);
+    return {
+      a: a !== undefined ? f.bare(a) : '–',
+      b: b !== undefined ? f.val(b) : '–',
+      d: a !== undefined && b !== undefined ? f.delta(b - a) : '',
+    };
+  });
+  const wOf = (key: 'a' | 'b' | 'd'): number => Math.max(0, ...cols.map((c) => textWidth(c[key], FONT.sub)));
+  const wA = wOf('a');
+  const wB = wOf('b');
+  const wD = wOf('d');
+  const ARROW = 17;
+  const valueW = wA + (k >= 2 ? ARROW + wB : 0) + (wD > 0 ? 12 + wD : 0);
+
+  // Row labels wrap to the label column (up to four lines); a cut is shown and reported.
+  const longest = Math.max(0, ...labels.map((l) => textWidth(l, FONT.name)));
+  const colW = Math.max(24, Math.min(DB_LABEL_MAX, Math.ceil(longest)));
+  const plan = labels.map((l, i) =>
+    fitText(l, {
+      width: colW,
+      font: FONT.name,
+      maxLines: DB_LABEL_LINES,
+      ...(tagLabels ? { report: { field: 'label', path: `labels.${i}`, hint: 'Shorten the row label, or split the chart.' } } : {}),
+    }),
+  );
+  const labelW = Math.ceil(Math.max(24, ...plan.flatMap((w) => w.lines.map((ln) => textWidth(ln, FONT.name)))));
+
+  const x0 = DB_PAD + labelW + DB_GAP;
+  const trackW = Math.round(Math.max(DB_TRACK_MIN, Math.min(DB_TRACK_MAX, DB_TARGET_W - (x0 + DB_GAP + valueW + DB_PAD))));
+  const x1 = x0 + trackW;
+  const vx = x1 + DB_GAP;
+  const width = Math.ceil(vx + valueW + DB_PAD);
+  const span = sc.hi - sc.lo || 1;
+  const X = (v: number): number => r1(x0 + (trackW * (Math.min(Math.max(v, sc.lo), sc.hi) - sc.lo)) / span);
+  // The dots of each row, on their true x. A row grows to hold its label
+  // lines, and a run of three or more dots that must split.
+  const rowDots = labels.map((_l, i) => {
+    const dots: DbDot[] = [];
+    series.forEach((_sr, si) => {
+      const v = valueAt(si, i);
+      if (v !== undefined) dots.push({ si, v, x: X(v), out: v < sc.lo ? -1 : v > sc.hi ? 1 : 0, dy: 0 });
+    });
+    return dots;
+  });
+  const heights = plan.map((w, i) =>
+    Math.max(DB_ROW, w.lines.length * DB_LINE_H + 12, ...clashRuns(rowDots[i] ?? []).map((run) => (run.length > 1 ? splitNeed(run.length) : 0))),
+  );
+  const top = 6;
+  const axisY = top + heights.reduce((a, b) => a + b, 0) + 4;
+  const height = axisY + 22;
+
+  const a11y = svgName('Dumbbell chart', data.title, [countPhrase(n, 'row'), countPhrase(k, 'series', 'series')]);
+  let s = `<svg viewBox="0 0 ${width} ${height}"${a11y.attrs}>${a11y.title}`;
+  // Gridlines at the ticks, the axis, and its labels under the last row
+  // (a label that would print over its neighbour is skipped).
+  s += `<g${DECORATIVE}>`;
+  for (const t of sc.ticks) s += `<line x1="${X(t)}" y1="${top}" x2="${X(t)}" y2="${axisY}" stroke="var(--rule)" stroke-width="1"/>`;
+  s += `</g>`;
+  s += `<line x1="${x0}" y1="${axisY}" x2="${x1}" y2="${axisY}" stroke="var(--rule-solid)" stroke-width="1"/>`;
+  let lastEnd = -Infinity;
+  for (const t of sc.ticks) {
+    const text = tick(t);
+    const w = textWidth(text, FONT.sub);
+    const x = X(t);
+    if (x - w / 2 < lastEnd + 6) continue;
+    lastEnd = x + w / 2;
+    s += `<text x="${x}" y="${axisY + 14}" class="t-sub c-soft" text-anchor="middle">${escapeHtml(text)}</text>`;
+  }
+
+  // The first value prints in `muted` (a step above the baseline's `soft` dot,
+  // so the number stays the easier read), or in its series colour when the
+  // author flagged that series.
+  const firstText = paintOf(0).text === 'c-soft' ? 'c-muted' : paintOf(0).text;
+  const colA = r1(vx + wA);
+  const colB = r1(colA + ARROW + wB);
+  const colD = r1(colB + 12 + wD);
+  let clamped = 0;
+  let y = top;
+  s += `<g${tagLabels ? bl('labels') : ''}>`;
+  labels.forEach((label, i) => {
+    const h = heights[i] ?? DB_ROW;
+    const cy = r1(y + h / 2);
+    y += h;
+    const dots = rowDots[i] ?? [];
+    splitDots(dots, h);
+    const c = cols[i] ?? { a: '', b: '', d: '' };
+    const past = (d: DbDot): string => (d.out === 0 ? '' : ` — past the axis ${d.out > 0 ? 'max' : 'min'} ${tick(d.out > 0 ? sc.hi : sc.lo)}`);
+    const parts = dots.map((d) => `${series[d.si]?.label ?? ''} ${f.val(d.v)}${past(d)}`);
+    const tip = `${label} — ${parts.join(' · ')}${c.d !== '' ? ` · change ${c.d}` : ''}`;
+    s += `<g class="chart-db-row"><title>${escapeHtml(tip)}</title>`;
+    // The track: a hairline the row's dots sit on.
+    s += `<line x1="${x0}" y1="${cy}" x2="${x1}" y2="${cy}" stroke="var(--rule)" stroke-width="1"${DECORATIVE}/>`;
+    // The label, wrapped and centred on the track.
+    const w = plan[i];
+    const lines = w?.lines ?? [];
+    const ly = r1(cy - ((lines.length - 1) * DB_LINE_H) / 2 + 4.5);
+    const spans = lines
+      .map((ln, li) => (lines.length === 1 ? escapeHtml(ln) : `<tspan x="${DB_PAD}" y="${r1(ly + li * DB_LINE_H)}">${escapeHtml(ln)}</tspan>`))
+      .join('');
+    s += `<text x="${DB_PAD}" y="${ly}" class="t-name"${tagLabels ? bp(`labels.${i}`) : ''}>${w !== undefined ? cutTitle(w) : ''}${spans}</text>`;
+    // The connector, lowest dot to highest: drawn edge to edge between
+    // neighbouring dots, so no part of it hides under a dot.
+    const xs = [...new Set(dots.map((d) => d.x))].sort((p, q) => p - q);
+    for (let j = 1; j < xs.length; j++) {
+      const from = (xs[j - 1] ?? 0) + DB_R;
+      const to = (xs[j] ?? 0) - DB_R;
+      if (to - from > 1) s += `<line class="chart-db-link" x1="${r1(from)}" y1="${cy}" x2="${r1(to)}" y2="${cy}" stroke="var(--rule-solid)" stroke-width="2"/>`;
+    }
+    // Dots in series order, so the focal last series paints on top; a paper
+    // ring cuts each one clear of the connector and of a close neighbour.
+    for (const d of dots) {
+      const p = paintOf(d.si);
+      const dy = r1(cy + d.dy);
+      s += `<g${bp(`series.${d.si}.values.${i}`)}><title>${escapeHtml(`${series[d.si]?.label ?? ''} · ${label}: ${f.val(d.v)}${past(d)}`)}</title>`;
+      s += `<circle cx="${d.x}" cy="${dy}" r="${DB_R + 1.5}" fill="var(--paper)"${DECORATIVE}/>`;
+      s += `<circle class="chart-db-dot" cx="${d.x}" cy="${dy}" r="${DB_R}" fill="${p.color}"/>`;
+      if (d.out !== 0) {
+        // A value past an authored end: an outward chevron beside the end dot.
+        clamped++;
+        const tip0 = d.x + d.out * (DB_R + 2);
+        const tip1 = d.x + d.out * (DB_R + 5.5);
+        s += `<path class="chart-db-clamp" d="M ${r1(tip0)} ${r1(dy - 3.5)} L ${r1(tip1)} ${dy} L ${r1(tip0)} ${r1(dy + 3.5)}" fill="none" stroke="${p.color}" stroke-width="1.5"/>`;
+      }
+      s += `</g>`;
+    }
+    // The values: first → last and the signed change.
+    const vy = r1(cy + 3.5);
+    if (k < 2) {
+      s += `<text x="${colA}" y="${vy}" class="t-sub chart-db-val ${paintOf(0).text}" text-anchor="end" font-weight="600">${escapeHtml(c.a)}</text>`;
+    } else {
+      s +=
+        `<text x="${colA}" y="${vy}" class="t-sub chart-db-val" text-anchor="end">` +
+        `<tspan class="${firstText}">${escapeHtml(c.a)}</tspan>` +
+        `<tspan x="${r1(colA + ARROW / 2)}" text-anchor="middle" class="c-soft">→</tspan>` +
+        `<tspan x="${colB}" text-anchor="end" class="${paintOf(k - 1).text}" font-weight="600">${escapeHtml(c.b)}</tspan>` +
+        (c.d !== '' ? `<tspan x="${colD}" text-anchor="end" class="c-muted">${escapeHtml(c.d)}</tspan>` : '') +
+        `</text>`;
+    }
+    s += `</g>`;
+  });
+  s += `</g></svg>`;
+
+  const legend: LegendItem[] = series.map((sr, si) => ({
+    swatch: 'node-dot',
+    fill: paintOf(si).color,
+    stroke: paintOf(si).color,
+    label: sr.label,
+    path: `series.${si}`,
+  }));
+  if (clamped > 0) legend.push({ swatch: 'edge', label: 'past the axis end · the true value is printed' });
+  return { svg: s, legend: renderLegend(legend, 'series') };
 }

@@ -75,9 +75,10 @@ describe('nested groups (parent)', () => {
 
   it('every level carries its own eyebrow tab; the tabs alternate sides', () => {
     const svg = gridGroupsSvg(three, GEO);
-    expect(svg).toMatch(/class="t-eyebrow"[^>]*>Region<\/text>/);
-    expect(svg).toMatch(/class="t-eyebrow"[^>]*text-anchor="end">Zone<\/text>/);
-    expect(svg).toMatch(/class="t-eyebrow"[^>]*>Subnet<\/text>/);
+    // The tab may carry the group's hue class (`c-blue`), so match the class loosely.
+    expect(svg).toMatch(/class="t-eyebrow[^"]*"[^>]*>Region<\/text>/);
+    expect(svg).toMatch(/class="t-eyebrow[^"]*"[^>]*text-anchor="end">Zone<\/text>/);
+    expect(svg).toMatch(/class="t-eyebrow[^"]*"[^>]*>Subnet<\/text>/);
     expect(svg).not.toMatch(/text-anchor="end">Subnet<\/text>/);
     expect(svg).not.toMatch(/text-anchor="end">Region<\/text>/);
   });
@@ -193,9 +194,9 @@ describe('preset: k8s', () => {
       expect(html, chip).toContain(`>${chip}</text>`);
     }
     expect(html).toContain('>×3</text>');
-    // Card-shaped kinds carry the muted single-stroke glyph beside the name.
+    // Card-shaped kinds carry the single-stroke glyph beside the name, in the family hue (compute: blue).
     const pod = html.slice(html.indexOf('data-bp="nodes.3"'), html.indexOf('data-bp="nodes.4"'));
-    expect(pod).toMatch(/<path d="M7 1\.2[^"]*" transform="translate\(\d+ \d+\)" fill="none" stroke="var\(--muted\)"/);
+    expect(pod).toMatch(/<path d="M7 1\.2[^"]*" transform="translate\(\d+ \d+\)" fill="none" stroke="var\(--hue-blue\)"/);
   });
 
   it('two entry kinds mean no accent', () => {

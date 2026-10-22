@@ -31,7 +31,17 @@ import type { BlockType } from '../types.js';
  *   Editors should fall back to raw YAML for these. `superRefine`d schemas
  *   unwrap to their inner object (see `unwrap`).
  */
-export type FieldNode =
+export type FieldNode = FieldShape & {
+  /**
+   * The schema's own note for this field (`.describe('…')`), when it carries
+   * one: the vocabulary of a free-string field whose words the renderer owns.
+   * `chiltepin block <type>` prints it under "Field notes".
+   */
+  readonly description?: string;
+};
+
+/** The structural part of a {@link FieldNode}. */
+export type FieldShape =
   | { readonly kind: 'string' | 'boolean'; readonly optional: boolean }
   | {
       readonly kind: 'number';
@@ -61,8 +71,26 @@ export type FieldNode =
   | { readonly kind: 'union'; readonly optional: boolean; readonly arms: readonly FieldNode[] }
   | { readonly kind: 'opaque'; readonly optional: boolean };
 
-/** Describes one schema node, tracking optionality from its wrappers. */
+/**
+ * Describes one schema node and keeps the author-facing note a schema carries
+ * (`.describe('…')`, on the field or on any wrapper around it) as
+ * `description`. Only a few free-string fields carry one — the ones whose
+ * vocabulary the renderer owns (a node `kind`, a group `color`).
+ */
 function describe(schema: z.ZodTypeAny): FieldNode {
+  let note: string | undefined = schema.description;
+  for (let cur: z.ZodTypeAny = schema; note === undefined; ) {
+    if (cur instanceof z.ZodOptional || cur instanceof z.ZodNullable) cur = cur.unwrap() as z.ZodTypeAny;
+    else if (cur instanceof z.ZodDefault) cur = cur._def.innerType as z.ZodTypeAny;
+    else break;
+    note = cur.description;
+  }
+  const node = describeShape(schema);
+  return note !== undefined ? { ...node, description: note } : node;
+}
+
+/** Describes one schema node's structure, tracking optionality from its wrappers. */
+function describeShape(schema: z.ZodTypeAny): FieldNode {
   // Optional / nullable mark the node optional; default just unwraps (the
   // field can be omitted syntactically, but a value always materialises).
   let optional = false;

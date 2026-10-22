@@ -228,6 +228,16 @@ export interface MetaData {
   readonly tag?: string;
   /** Optional brand logo (URL or path) shown in the document/slide cover. */
   readonly logo?: string;
+  /** Where the document stands: `draft`, `proposal`, `review`, `accepted`, `superseded`, `deprecated`, or `example`. */
+  readonly status?: string;
+  /** The people or teams who own the document. */
+  readonly owners?: readonly string[];
+  /** The people who review the document. */
+  readonly reviewers?: readonly string[];
+  /** When the document last changed (a date, as written). */
+  readonly updated?: string;
+  /** The document version, as text. */
+  readonly version?: string;
 }
 
 /** A fence whose tag looks like a typo of a real block type. */

@@ -21,12 +21,13 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { edgeLanes, entryPortOffsets, ortho } from '../svg/ortho.js';
-import { edgeLabelLayer, type EdgeLabelPoint } from '../svg/edgeSteps.js';
+import { layoutEdges } from '../svg/edgeLayout.js';
+import { gapsForLabels, geometryOf, type GeometryReport } from '../svg/geometry.js';
 import { nodeSkin } from '../svg/blockStyle.js';
+import type { Hue } from '../svg/hues.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
-import { edgeAnchorRect, renderShapedNode } from './blockGraph.js';
-import { wrapText } from '../svg/wrapText.js';
+import { edgeAnchorRect, growCells, renderShapedNode, shapedLabelDeficit } from './blockGraph.js';
+import { cutTitle, fitStack, FONT, reportCut, type FittedStack } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 import { ensureGrid } from './autoLayout.js';
@@ -160,21 +161,72 @@ const SHAPE_REMAP: Record<string, string> = {
 };
 const SHAPED_KINDS = new Set(['db', 'store', 'database', 'queue', 'broker', 'cache', 'redis', 'external']);
 
+const FE_NAME_LH = 15;
+const FE_NOTE_LH = 12;
+const FE_GAP = 3;
+/** The room a module card keeps under a label block that fills it (half each side when centred). */
+const FE_BOTTOM = 6;
+
+/**
+ * A module card's name and note fitted to the card below its chip: the
+ * stack, where it starts, and the room it had.
+ */
+function feCardLabels(
+  n: { readonly name: string; readonly note?: string | undefined },
+  r: { readonly x: number; readonly y: number; readonly w: number; readonly h: number },
+  chip: boolean,
+): { fit: FittedStack; top: number; room: number } {
+  const top = r.y + (chip ? 20 : 8);
+  const room = r.y + r.h - FE_BOTTOM - top;
+  const fit = fitStack(
+    { text: n.name, font: FONT.name, lineH: FE_NAME_LH, maxLines: 4 },
+    n.note !== undefined ? { text: n.note, font: FONT.sub, lineH: FE_NOTE_LH, maxLines: 3 } : undefined,
+    r.w - 24,
+    room,
+    FE_GAP,
+  );
+  return { fit, top, room };
+}
+
 function renderFelogicGraph(data: Data, tag: string): string {
+  return layoutFelogic(data, tag).html;
+}
+
+/** Geometry report for a `felogic` block (see `geometryReport`). */
+export function felogicGeometry(data: BlockDataMap['felogic']): GeometryReport {
+  return layoutFelogic(data, 'LOGIC').geometry;
+}
+
+/** Lays out and draws a module graph: the framed HTML plus its geometry report. */
+function layoutFelogic(data: Data, tag: string): { html: string; geometry: GeometryReport } {
   const groups = data.groups ?? [];
   const edges = data.edges ?? [];
+  const dir = data.dir ?? 'LR';
   // Quick mode: with no coordinate-anchored groups, nodes missing `col`/`row`
   // trigger auto-layout of the whole graph from the edges (left-to-right).
   const rawNodes = data.nodes ?? [];
   const quick = !(rawNodes.length > 0 && rawNodes.every((n) => n.col !== undefined && n.row !== undefined));
   const nodes =
     groups.length === 0
-      ? ensureGrid(rawNodes, edges, data.dir ?? 'LR')
+      ? ensureGrid(rawNodes, edges, dir)
       : rawNodes.map((n) => ({ ...n, col: n.col ?? 1, row: n.row ?? 1 }));
   const cellW = 178;
-  const cellH = 80;
-  const gapX = 54;
-  const gapY = 60;
+  // One column gap and one row gap, wide enough for every edge label.
+  const cellOf = (id: string): (typeof nodes)[number] | undefined => nodes.find((n) => n.id === id);
+  const { gapX, gapY } = gapsForLabels(edges, cellOf, dir, { gapX: 54, gapY: 60 });
+  // One cell height: tall enough for every module's whole name and note, up to a cap.
+  const cellH = growCells(80, 140, (h) =>
+    Math.max(
+      0,
+      ...nodes.map((n) => {
+        const r = { x: 0, y: 0, w: (n.w ?? 1) * cellW + ((n.w ?? 1) - 1) * gapX, h };
+        const k = SHAPE_REMAP[(n.kind ?? '').toLowerCase()] ?? (n.kind ?? '').toLowerCase();
+        if (SHAPED_KINDS.has(k)) return shapedLabelDeficit({ kind: k, name: n.name, tech: n.note }, r);
+        const fit = feCardLabels(n, r, feSkin(n.kind).chip !== '');
+        return fit.fit.need - fit.room;
+      }),
+    ),
+  );
   // Declared group nesting (`parent`) steps each child panel in and grows its
   // ancestors out. Two levels need more room than a single panel's 22px of
   // label headroom, so a nesting document uses the shared group overshoot and
@@ -215,7 +267,6 @@ function renderFelogicGraph(data: Data, tag: string): string {
     w: (g.cols ?? 1) * cellW + ((g.cols ?? 1) - 1) * gapX + over.x * 2,
     h: (g.rows ?? 1) * cellH + ((g.rows ?? 1) - 1) * gapY + over.top + over.bot,
   });
-  const byId = new Map(nodes.map((n) => [n.id, n]));
   const width = padX * 2 + cols * cellW + (cols - 1) * gapX;
   const height = padTop + rows * cellH + (rows - 1) * gapY + padBot;
   // Largest groups first so smaller ones layer on top (index kept for paths).
@@ -250,11 +301,9 @@ function renderFelogicGraph(data: Data, tag: string): string {
     `<marker id="feTri" viewBox="0 0 14 14" refX="13" refY="7" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto-start-reverse">` +
     `<path d="M1,1 L13,7 L1,13 z" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2"/></marker></defs>`;
 
-  // Group panels — the skin's paper-2 wash with a `rule-solid` hairline and a
-  // mono eyebrow tab. A group's `color` is not a stroke: boundaries never
-  // borrow `link` or any hue (the tab keeps `soft`).
-  s += `<g${bl('groups')}>`;
-  for (const { g, gi } of sortedGroups) {
+  // A group's panel rect (nesting insets applied), its tab side and the box
+  // its eyebrow tab covers.
+  const panelOf = (g: Group): { r: { x: number; y: number; w: number; h: number }; tabEnd: boolean; tab: { x: number; y: number; w: number; h: number } } => {
     const raw = groupRect(g);
     // A declared child steps IN from its parent and its ancestors grow OUT, so
     // the levels never sit on each other; the tab alternates left / right per
@@ -270,6 +319,17 @@ function renderFelogicGraph(data: Data, tag: string): string {
             h: raw.h - nest.inset.h,
           };
     const tabEnd = nest !== undefined && nest.depth % 2 === 1;
+    const tw = Math.ceil(g.label.length * 6.4) + 4;
+    const tab = { x: tabEnd ? r.x + r.w - 12 - tw : r.x + 10, y: r.y + 5, w: tw, h: 13 };
+    return { r, tabEnd, tab };
+  };
+
+  // Group panels — the skin's paper-2 wash with a `rule-solid` hairline and a
+  // mono eyebrow tab. A group's `color` is not a stroke: boundaries never
+  // borrow `link` or any hue (the tab keeps `soft`).
+  s += `<g${bl('groups')}>`;
+  for (const { g, gi } of sortedGroups) {
+    const { r, tabEnd } = panelOf(g);
     const lbl = tabEnd
       ? `<text x="${r.x + r.w - 12}" y="${r.y + 15}" class="t-eyebrow" text-anchor="end">${escapeHtml(g.label)}</text>`
       : `<text x="${r.x + 12}" y="${r.y + 15}" class="t-eyebrow">${escapeHtml(g.label)}</text>`;
@@ -286,28 +346,30 @@ function renderFelogicGraph(data: Data, tag: string): string {
     const k = (n.kind ?? '').toLowerCase();
     return edgeAnchorRect(SHAPE_REMAP[k] ?? k, rectFor(n));
   };
-  const pending: EdgeLabelPoint[] = [];
   const edgeLegend = new Set<FeEdgeStyle['legend']>();
   s += `<g${bl('edges')}>`;
-  const lanes = edgeLanes(edges);
-  const entries = entryPortOffsets(edges, (id) => {
-    const n = byId.get(id);
-    return n !== undefined ? anchorOf(n) : undefined;
-  });
+  // Every edge is routed around the modules, never through one, and its
+  // label sits on it; routes keep off the group panels' borders and tabs.
+  const bounds = { x: 0, y: 0, w: width, h: height };
+  const panels = sortedGroups.map(({ g }) => panelOf(g));
+  const { routes, labels } = layoutEdges(
+    nodes.map((n) => ({ id: n.id, box: anchorOf(n), obstacle: rectFor(n) })),
+    edges,
+    edges.map((e, ei) => ({ label: e.label, path: `edges.${ei}` })),
+    { dir, bounds, obstacles: panels.map((p) => p.tab), rails: panels.map((p) => p.r) },
+  );
   edges.forEach((e, ei) => {
-    const A = byId.get(e.from);
-    const B = byId.get(e.to);
-    if (!A || !B) return;
-    const p = ortho(anchorOf(A), anchorOf(B), lanes[ei] ?? 0, entries[ei] ?? 0);
+    const p = routes[ei];
+    if (p === undefined) return;
     const st = feEdge(e.kind);
     edgeLegend.add(st.legend);
     const dash = st.dash.length > 0 ? ` stroke-dasharray="${st.dash}"` : '';
     s += `<path d="${p.d}" fill="none" stroke="${st.stroke}" stroke-width="${st.sw}"${dash} marker-end="url(#${st.marker})"${bp(`edges.${ei}`)}/>`;
-    pending.push({ lx: p.lx, ly: p.ly, ...(e.label !== undefined ? { label: e.label } : {}), path: `edges.${ei}` });
   });
   s += `</g>`; // close the edges list container
 
-  const chipsUsed = new Map<string, 'card' | 'shape'>();
+  // The value is the family hue a shaped kind (store, queue, cache) carries into the legend.
+  const chipsUsed = new Map<string, Hue | undefined>();
   let dashedUsed = false;
   let inactiveUsed = false;
   s += `<g${bl('nodes')}>`;
@@ -321,11 +383,12 @@ function renderFelogicGraph(data: Data, tag: string): string {
     const shapeKind = SHAPE_REMAP[k] ?? k;
     if (SHAPED_KINDS.has(shapeKind)) {
       const sk = nodeSkin(shapeKind);
-      if (sk.chip !== '' && !chipsUsed.has(sk.chip)) chipsUsed.set(sk.chip, 'shape');
+      if (sk.chip !== '' && !chipsUsed.has(sk.chip)) chipsUsed.set(sk.chip, sk.hue);
       if (sk.dashed) dashedUsed = true;
-      if (sk.fill === 'paper-2') inactiveUsed = true;
+      // A shaped store draws in its family tint, not on `paper-2`.
+      if (sk.fill === 'paper-2' && sk.hue === undefined) inactiveUsed = true;
       s += `<g${bp(`nodes.${ni}`)}${nodeCellAttrs(n.col, n.row, n.w ?? 1)}>${renderShapedNode(
-        { kind: shapeKind, name: n.name, ...(n.note !== undefined ? { tech: n.note } : {}) },
+        { kind: shapeKind, name: n.name, ...(n.note !== undefined ? { tech: n.note } : {}), path: `nodes.${ni}` },
         r,
         undefined,
         accent,
@@ -333,7 +396,7 @@ function renderFelogicGraph(data: Data, tag: string): string {
       return;
     }
     const sk = feSkin(n.kind);
-    if (sk.chip !== '' && !chipsUsed.has(sk.chip)) chipsUsed.set(sk.chip, 'card');
+    if (sk.chip !== '' && !chipsUsed.has(sk.chip)) chipsUsed.set(sk.chip, undefined);
     if (sk.dashed) dashedUsed = true;
     if (sk.fill === 'paper-2') inactiveUsed = true;
     const stroke = accent ? 'var(--accent)' : sk.primary ? 'var(--ink)' : 'var(--rule-solid)';
@@ -346,41 +409,53 @@ function renderFelogicGraph(data: Data, tag: string): string {
       sk.chip !== ''
         ? `<text x="${r.x + 12}" y="${r.y + 14}" class="t-eyebrow${chipTone}">${escapeHtml(sk.chip)}</text>`
         : '';
-    // Wrap name (≤2 lines) + note (≤2 lines), centred vertically in the space
-    // below the chip so long labels never overflow or overlap.
+    // Name over note, centred vertically in the space below the chip; the
+    // grid grew the cells for them, and what still does not fit ends in "…".
     const nx = r.x + 12;
-    const textW = r.w - 24;
-    const nameLines = wrapText(n.name, Math.max(6, Math.floor(textW / 7)), 2);
-    const noteLines = n.note !== undefined ? wrapText(n.note, Math.max(6, Math.floor(textW / 6.2)), 2) : [];
-    const nameLineH = 15;
-    const noteLineH = 12;
-    const gap = 3;
-    const blockTop = r.y + (sk.chip !== '' ? 20 : 8);
-    const blockH = nameLines.length * nameLineH + (noteLines.length > 0 ? gap + noteLines.length * noteLineH : 0);
-    let ty = blockTop + (r.y + r.h - blockTop - blockH) / 2 + nameLineH - 4;
-    let labelSvg = '';
-    for (const ln of nameLines) {
-      labelSvg += `<text x="${nx}" y="${ty.toFixed(1)}" class="t-name${accent ? ' c-accent' : ''}">${escapeHtml(ln)}</text>`;
-      ty += nameLineH;
+    const { fit, top } = feCardLabels(n, r, sk.chip !== '');
+    if (fit.head.truncated) {
+      reportCut({ path: `nodes.${ni}.name`, field: 'name', full: fit.head.full, hint: 'Shorten `name`, or move the detail to `note`.' });
     }
-    if (noteLines.length > 0) {
-      ty += gap - nameLineH + noteLineH;
-      for (const ln of noteLines) {
-        labelSvg += `<text x="${nx}" y="${ty.toFixed(1)}" class="t-sub">${escapeHtml(ln)}</text>`;
-        ty += noteLineH;
-      }
+    if (fit.tail.truncated) {
+      reportCut({ path: `nodes.${ni}.note`, owner: n.name, field: 'note', full: fit.tail.full, hint: 'Shorten `note`, and put the rest in the prose.' });
+    }
+    const blockH = fit.height;
+    let ty = top + (r.y + r.h - top - blockH) / 2 + FE_NAME_LH - 4;
+    let labelSvg = '';
+    fit.head.lines.forEach((ln, i) => {
+      labelSvg += `<text x="${nx}" y="${ty.toFixed(1)}" class="t-name${accent ? ' c-accent' : ''}">${i === 0 ? cutTitle(fit.head) : ''}${escapeHtml(ln)}</text>`;
+      ty += FE_NAME_LH;
+    });
+    if (fit.tail.lines.length > 0) {
+      ty += FE_GAP - FE_NAME_LH + FE_NOTE_LH;
+      fit.tail.lines.forEach((ln, i) => {
+        labelSvg += `<text x="${nx}" y="${ty.toFixed(1)}" class="t-sub">${i === 0 ? cutTitle(fit.tail) : ''}${escapeHtml(ln)}</text>`;
+        ty += FE_NOTE_LH;
+      });
     }
     s += `<g${bp(`nodes.${ni}`)}${nodeCellAttrs(n.col, n.row, n.w ?? 1)}>` + cardSvg + chip + labelSvg + `</g>`;
   });
   s += `</g>`; // close the nodes list container
 
-  const { overlay, legend: steps } = edgeLabelLayer(pending, nodes.map((n) => rectFor(n)), { skin: true });
-  s += overlay; // labels on top, never crossed by a line
+  s += labels.overlay; // labels on top, never crossed by a line
   s += `</svg>`;
+  const steps = labels.legend;
+  const geometry = geometryOf({
+    nodeWord: 'module',
+    edgeWord: 'edge',
+    nodes: nodes.map((n, ni) => ({ id: n.id, name: n.name, path: `nodes.${ni}`, col: n.col, row: n.row, w: n.w })),
+    edges: edges.map((e, ei) => ({ from: e.from, to: e.to, label: e.label, path: `edges.${ei}` })),
+    routes,
+    fallbacks: labels.fallbackIndex,
+    labelBoxes: labels.boxes,
+    nodeBoxes: nodes.map((n) => rectFor(n)),
+    quick,
+    dir,
+  });
 
   const items: LegendItem[] = [];
-  for (const chip of chipsUsed.keys()) {
-    items.push({ swatch: 'chip', chip, label: CHIP_LABEL[chip] ?? chip.toLowerCase() });
+  for (const [chip, hue] of chipsUsed) {
+    items.push({ swatch: 'chip', chip, label: CHIP_LABEL[chip] ?? chip.toLowerCase(), ...(hue !== undefined ? { hue } : {}) });
   }
   if (dashedUsed) items.push({ swatch: 'node-dashed', label: 'contract / external' });
   if (inactiveUsed) items.push({ swatch: 'node-fill2', label: 'passive (state, middleware, store)' });
@@ -392,7 +467,7 @@ function renderFelogicGraph(data: Data, tag: string): string {
   if (accentId !== undefined) items.push({ swatch: 'node-accent', label: 'entry point' });
   const legend = renderLegend(items);
 
-  return diagramFrame(
+  const html = diagramFrame(
     {
       tag,
       ...(data.title !== undefined ? { title: data.title } : {}),
@@ -401,6 +476,7 @@ function renderFelogicGraph(data: Data, tag: string): string {
     },
     s + steps,
   );
+  return { html, geometry };
 }
 
 /** Legend wording for the chips a module graph can show. */

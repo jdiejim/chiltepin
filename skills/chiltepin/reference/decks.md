@@ -17,7 +17,7 @@ A sentence of context, then any blocks under this heading.
 
 ```drivers
 items:
-  - { title: Slow, body: "p95 hit 2.4s.", icon: clock, accent: amber }
+  - { title: Slow checkout, body: "p95 over 7 d hit 2.4 s against an 800 ms target.", icon: clock }
 ```
 
 # The fix
@@ -90,9 +90,9 @@ For an executive or consulting-grade deck, hold every slide to the formula
 - **The money slide is a `bignumber`.** When one metric carries the whole
   argument ("-75% checkout p95"), give it its own `{split}` slide: message
   left, the `bignumber` as the exhibit right. Do not use a one-item `stats` row.
-- **Close the argument with `takeaways`**: the 2-4 things the room must
-  remember, numbered; follow with a `callout` (`tone: success`) only if
-  there's a separate ask.
+- **Close on the ask.** `takeaways` holds the 2-4 things the room must
+  remember; the last one is the ask: the owner, the date, the next step.
+  Never close on caveats.
 - **No thin slides.** A heading floating over one small block reads empty —
   merge it into a neighbour, or give it a message column with `{split}`.
 
@@ -104,7 +104,6 @@ A three-part skeleton using all three:
 ```divider
 kicker: PART 1
 title: Checkout is bleeding conversions
-accent: navy
 ```
 
 ## One number tells the story {split}
@@ -116,7 +115,6 @@ request path. Nothing else moved.
 value: "-75%"
 label: Checkout p95 after the change
 trend: down
-accent: green
 ```
 
 ## What to remember
@@ -145,11 +143,11 @@ series:
 ````
 
 
-### The design-review arc — the structural exemplar
+### The design-review arc — one worked shape
 
-For a full design-review deck, follow this **arc**. The structure is the
-template — swap every exhibit and every title for the system at hand; nothing
-about the topic carries over.
+For a full design-review deck, this **arc** is one worked shape, not a form
+to fill. Keep the principles below it. Take every slide, exhibit, and title
+from the fact inventory, and drop a slide when no fact supports it.
 
 | # | Slide (always an action title) | Layout | Exhibit |
 |---|---|---|---|
@@ -180,11 +178,11 @@ What the arc encodes (keep these even when you reshape it):
   option honestly or the deck reads as a sales pitch.
 - **Slides 9-11 are chosen by YOUR bottleneck**, not by this table: a fan-out
   system shows `sequence` + `swimlane`; a storage system might show `erd` +
-  `heatmap`; an agent system `agentloop` + `trace`. Two or three deep dives,
-  never a fixed list.
-- **The commitment close never changes**: objectives (`slo`) → the money
-  number (`bignumber`, echoing slide 4's target) → `takeaways`. The last
-  takeaway carries the ask (effort, flag, rollback).
+  `heatmap`; an AI system a `flow` built from the kit (`kit.md`) + measured
+  eval results. Two or three deep dives, never a fixed list.
+- **Close on the commitment**: the objectives the team states (`slo`) → the
+  number that matters (`bignumber`, echoing slide 4's target) →
+  `takeaways`. The last takeaway carries the ask (effort, flag, rollback).
 
 ## Provenance and position
 

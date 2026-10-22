@@ -191,8 +191,8 @@ describe('auto activation', () => {
     const [xA, , xC] = laneXs(messages) as [number, number, number];
     const bars = rects(html, 'activation');
     expect(bars).toContainEqual({ x: xA - 3, y: 78, w: 6, h: 84 });
-    // C never replies or sends: the bar just marks the receipt.
-    expect(bars).toContainEqual({ x: xC - 3, y: 114, w: 6, h: 12 });
+    // C never replies or sends: nothing extends its bar, so no empty box is drawn.
+    expect(bars.some((b) => b.x === xC - 3)).toBe(false);
   });
 
   it('a frame-less list renders the same rows as before', () => {
@@ -242,9 +242,10 @@ describe('self-messages and notes', () => {
       messages: [{ from: 'A', to: 'A', kind: 'note', label: 'hi', summary: 'a note with a step' }],
     });
     expect(rects(beside, 'seq-note')).toEqual([{ x: xA + 12, y: 62, w: 72, h: 18 }]);
-    // A summary keeps the badge so the step list can reference it.
-    expect(parse(beside).querySelector('.step-badge')).not.toBeNull();
-    expect(parse(beside).querySelector('.seq-steps .step-n')?.text).toBe('1');
+    // A summary keeps the badge so the step list can reference it; a note is
+    // never numbered, so both show the note mark.
+    expect(parse(beside).querySelector('.step-badge-text')?.text).toBe('i');
+    expect(parse(beside).querySelector('.seq-steps .step-n')?.text).toBe('i');
   });
 
   it('a long note wraps to at most 3 lines and grows its row', () => {

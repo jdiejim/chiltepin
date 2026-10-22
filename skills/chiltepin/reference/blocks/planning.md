@@ -1,8 +1,8 @@
 # Chiltepin blocks — Planning, lists & backlogs
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Time — what happened or is planned (`timeline`, `changelog`,
 `rollout`, `roadmap`, `chevrons`); Grid — one option weighed (`proscons`);
@@ -15,9 +15,9 @@ work items and cards (`userstory`, `stories`, `kanban`, `storymap`,
 One story as its own section: role / want / soThat, criteria, links. Use a short
 stable `id` (`US-142`); other docs reference it. `links[].ref` (`doc#id`) is a real
 cross-reference that `chiltepin check` verifies. Answers: what does done mean? `stories` for many.
-#### `timeline` — phases / roadmap
-Phases in order with a status dot each. Answers: what happens in which phase?
-`timeline` for plans ahead; `changelog` for history; `gantt` for bars.
+#### `timeline` — ordered events or phases, past or planned
+A status dot each. Answers: what happens in which order? `changelog` for
+releases; `gantt` for bars over periods; `gitgraph` for branches.
 #### `changelog` — release history
 A rail with a dot per release (red for `tag: breaking`), a version pill, a date,
 and typed items. Newest first. Answers: what shipped when?

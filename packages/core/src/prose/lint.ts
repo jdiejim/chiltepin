@@ -13,8 +13,12 @@
  *   brevity. The skill's zone rules (SKILL.md "Prose rules",
  *   `reference/style-ste.md` "Where each level applies") are the authority.
  * - `W_PROSE_PASSIVE_STEP` — passive voice in `steps` item text only.
- * - `W_PROSE_TENSE` — perfect or progressive constructions.
- * - `W_PROSE_FILLER_OPENER` — a banned filler opener starts a sentence.
+ * - `W_PROSE_TENSE` — perfect or progressive constructions. The present
+ *   perfect anchored in time (`has been failing since 09:00`, `has grown for
+ *   40 minutes`) is allowed: incident and status prose needs it.
+ * - `W_PROSE_FILLER_OPENER` — a banned filler opener starts a sentence, or a
+ *   meta phrase points at text the reader never saw ("The request names no
+ *   model", "as requested", "the closing list").
  * - `W_PROSE_TERM_DRIFT` — a word from a glossary term's `avoid` list appears
  *   in the doc's prose.
  *
@@ -31,6 +35,7 @@ import type { Document } from '../types.js';
 import {
   findDrift,
   findFillerOpener,
+  findMetaPhrase,
   findPassive,
   findTense,
   messages,
@@ -158,6 +163,10 @@ export function lintProse(doc: Document, file: string, opts: ProseLintOptions = 
         if (opener !== undefined) {
           push('W_PROSE_FILLER_OPENER', unit, s.start, messages.fillerOpener(opener), span);
         }
+        const meta = findMetaPhrase(s.text);
+        if (meta !== undefined) {
+          push('W_PROSE_FILLER_OPENER', unit, s.start, messages.metaPhrase(meta), span);
+        }
       }
     }
 
@@ -178,5 +187,47 @@ export function lintProse(doc: Document, file: string, opts: ProseLintOptions = 
     }
   }
 
+  // Meta phrases in every other block string (list items, table cells,
+  // labels): the reader never saw the brief, wherever the phrase sits.
+  if (enabled.has('W_PROSE_FILLER_OPENER')) {
+    // Strings a prose unit already covers (a `body` field) were checked above.
+    const reported = units.filter((u) => u.kind !== 'markdown' && findMetaPhrase(u.text) !== undefined).map((u) => u.text);
+    const covered = new Set<string>();
+    for (const seg of doc.segments) {
+      if (seg.kind === 'markdown' || seg.kind === 'code' || seg.parseError !== undefined) continue;
+      for (const text of blockStrings(seg.data)) {
+        if (covered.has(text) || reported.some((r) => text.includes(r))) continue;
+        const meta = findMetaPhrase(text);
+        if (meta === undefined) continue;
+        covered.add(text);
+        const msg = messages.metaPhrase(meta);
+        diagnostics.push({
+          file,
+          line: seg.line,
+          level: 'warn',
+          code: 'W_PROSE_FILLER_OPENER',
+          message: msg.message,
+          hint: msg.hint,
+          value: quoteSpan(text),
+        });
+      }
+    }
+  }
+
   return diagnostics;
+}
+
+/** Keys whose strings are code or ids, never prose. */
+const NON_PROSE_KEYS: ReadonlySet<string> = new Set(['id', 'code', 'lang', 'ref', 'from', 'to', 'kind']);
+
+/** Every prose-shaped string in a block's data. */
+function blockStrings(data: unknown, key?: string, out: string[] = []): string[] {
+  if (typeof data === 'string') {
+    if (key === undefined || !NON_PROSE_KEYS.has(key)) out.push(data);
+  } else if (Array.isArray(data)) {
+    for (const v of data) blockStrings(v, key, out);
+  } else if (typeof data === 'object' && data !== null) {
+    for (const [k, v] of Object.entries(data)) blockStrings(v, k, out);
+  }
+  return out;
 }

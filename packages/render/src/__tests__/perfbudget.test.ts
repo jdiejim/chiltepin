@@ -32,9 +32,11 @@ describe('perfbudget', () => {
   });
 
   it('counts the statuses in the footer and colours the bars by status', () => {
-    expect(root.querySelectorAll('.pb-foot span').map((sp) => sp.text.trim())).toEqual(['2 over', '1 near', '2 ok']);
+    // INP misses a ceiling (over); Lighthouse misses a floor (below).
+    expect(root.querySelectorAll('.pb-foot span').map((sp) => sp.text.trim())).toEqual(['1 over', '1 below', '1 near', '2 ok']);
     const bars = root.querySelectorAll('rect[data-bp$=".measured"]').map((r) => r.getAttribute('fill'));
-    expect(bars).toEqual(['var(--muted)', 'var(--negative)', 'var(--muted)', 'var(--accent)', 'var(--negative)']);
+    // Near is a warning (amber), never the accent; a miss is negative.
+    expect(bars).toEqual(['var(--muted)', 'var(--negative)', 'var(--muted)', 'var(--hue-amber)', 'var(--negative)']);
   });
 
   it('puts the budget mark at one x for every row and scales bars against it', () => {
@@ -52,8 +54,8 @@ describe('perfbudget', () => {
   });
 
   it('prints the measured value with its unit and the budget under the label', () => {
-    expect(html).toContain('>2140ms<');
-    expect(html).toContain('budget ≤ 2500ms');
+    expect(html).toContain('>2,140ms<');
+    expect(html).toContain('budget ≤ 2,500ms');
     expect(html).toContain('budget ≥ 90');
     expect(html).toContain('>0.04<');
   });

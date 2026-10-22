@@ -28,7 +28,7 @@ describe('wide drawings keep their natural size', () => {
 });
 
 describe('gantt period heads', () => {
-  it('stagger onto two rows and cut with a title when the column is too narrow', () => {
+  it('widen the columns, stagger onto two rows, and cut with a title only past that', () => {
     const periods = ['S1 · Jul 1-14', 'S2 · Jul 15-28', 'S3 · Jul 29 - Aug 11 (frozen)', 'S4 · Aug 12-25'];
     const svg = renderGantt({ periods, tasks: [{ label: 'A', start: 0, span: 2 }] });
     // two head rows: the y values alternate
@@ -36,7 +36,13 @@ describe('gantt period heads', () => {
     expect(ys).toBe(4);
     expect(svg).toMatch(/y="22"[^>]*class="t-eyebrow"/); // staggered row
     expect(svg).toMatch(/y="36"[^>]*class="t-eyebrow"/); // base row
-    expect(svg).toContain('<title>S3 · Jul 29 - Aug 11 (frozen)</title>'); // cut, full text kept
+    // The columns grow for the longest head: it shows whole, with no cut.
+    expect(svg).toContain('>S3 · Jul 29 - Aug 11 (frozen)</text>');
+    expect(svg).not.toContain('<title>S3');
+    const huge = 'Sprint 3 · July 29 to August 11 · release freeze for the payments platform';
+    const cut = renderGantt({ periods: ['S1', huge], tasks: [{ label: 'A', start: 0, span: 2 }] });
+    expect(cut).toContain(`<title>${huge}</title>`); // cut, full text kept
+    expect(cut).toMatch(/…<\/text>/);
     const short = renderGantt({ periods: ['Q1', 'Q2'], tasks: [{ label: 'A', start: 0, span: 1 }] });
     expect(short).not.toContain('<title>Q1');
     expect(short).toMatch(/y="22"[^>]*class="t-eyebrow"/);
@@ -58,8 +64,8 @@ describe('quadrant axis labels', () => {
   });
 });
 
-describe('state numerals', () => {
-  it('a short transition whose midpoint lands on a neighbouring state moves its badge off the box', () => {
+describe('state transition labels', () => {
+  it('a short transition whose midpoint lands on a neighbouring state keeps its label off the box', () => {
     // start → TRIALING (col 2) and start → ACTIVE (col 3): the second edge's
     // midpoint falls on the TRIALING box.
     const svg = renderState({
@@ -82,16 +88,17 @@ describe('state numerals', () => {
       w: Number(m[3]),
       h: Number(m[4]),
     }));
-    const badges = [...svg.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="8"/g)].map((m) => ({
-      x: Number(m[1]),
-      y: Number(m[2]),
-    }));
+    // Each label sits on its own transition (a paper mask), never a numeral.
+    const masks = [
+      ...svg.matchAll(/<g data-bp="transitions\.\d+"[^>]*><g><rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)" fill="var\(--paper\)"/g),
+    ].map((m) => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) }));
     expect(rects.length).toBe(3);
-    expect(badges.length).toBe(4);
-    for (const b of badges) {
+    expect(masks.length).toBe(4);
+    expect(svg).not.toMatch(/<circle cx="[\d.]+" cy="[\d.]+" r="8"/);
+    for (const l of masks) {
       for (const r of rects) {
-        const inside = b.x > r.x && b.x < r.x + r.w && b.y > r.y && b.y < r.y + r.h;
-        expect(inside, `badge at ${b.x},${b.y} sits on a state box`).toBe(false);
+        const overlap = l.x < r.x + r.w && r.x < l.x + l.w && l.y < r.y + r.h && r.y < l.y + l.h;
+        expect(overlap, `label at ${l.x},${l.y} sits on a state box`).toBe(false);
       }
     }
   });

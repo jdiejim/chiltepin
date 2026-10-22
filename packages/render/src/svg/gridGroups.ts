@@ -9,6 +9,29 @@
 import { escapeHtml } from '../escape.js';
 import { safeColor } from '../sanitize.js';
 import { bl, bp } from '../paths.js';
+import { assignPanelHues, dominantHue, hueClass, hueOf, hueTint, type Hue } from './hues.js';
+
+/** A node's cell and family hue — what a group panel reads to pick its own hue. */
+export interface HuedCell {
+  readonly col: number;
+  readonly row: number;
+  readonly hue?: Hue | undefined;
+}
+
+/**
+ * For each group, the family hue most of the nodes inside its cell range
+ * share (`undefined` when none carries one). A group of services leans blue,
+ * a group of stores amber — the panel then repeats what its nodes say.
+ */
+export function groupMemberHues(groups: readonly GridGroup[], cells: readonly HuedCell[]): (Hue | undefined)[] {
+  return groups.map((g) =>
+    dominantHue(
+      cells
+        .filter((c) => c.col >= g.col && c.col <= g.col + (g.cols ?? 1) - 1 && c.row >= g.row && c.row <= g.row + (g.rows ?? 1) - 1)
+        .map((c) => c.hue),
+    ),
+  );
+}
 
 /** One group (the shared `gridGroupSchema` shape in core). */
 export interface GridGroup {
@@ -34,12 +57,20 @@ export interface GridGroupGeom {
   readonly gapX: number;
   readonly gapY: number;
   /**
-   * The skin's group panel (`DESIGN.md`): `paper-2` fill, 1px `rule-solid`,
-   * the label as a `.t-eyebrow` in `soft`. An explicit `color` on the group
-   * still tints its outline and label — that is the author's data. Off for
-   * the renderers that have not migrated.
+   * The skin's group panel (`DESIGN.md`): a faint hue-tinted panel, 1px
+   * `rule-solid`, the label as a `.t-eyebrow` in the group's hue. `color`
+   * names the hue (`teal`); a hex still tints outline and label the legacy
+   * way — that is the author's data. Off for the renderers that have not
+   * migrated.
    */
   readonly skin?: boolean;
+  /**
+   * The nodes' cells and family hues: a group without `color` prefers the hue
+   * most of its nodes share. Omitted, unnamed groups take the rotation.
+   */
+  readonly members?: readonly HuedCell[];
+  /** `false` keeps unnamed groups neutral (`paper-2`, `soft` label) — threat-model trust boundaries. */
+  readonly autoHue?: boolean;
 }
 
 /**
@@ -193,6 +224,64 @@ export function nestingPads(groups: readonly GridGroup[]): { padX: number; padTo
 }
 
 /**
+ * The outermost group around each group (its own index when it is not
+ * nested): up the declared `parent` chain, else the biggest group that
+ * contains it geometrically.
+ */
+function groupRoots(groups: readonly GridGroup[]): number[] {
+  const byId = new Map<string, number>();
+  groups.forEach((g, i) => {
+    if (g.id !== undefined && !byId.has(g.id)) byId.set(g.id, i);
+  });
+  const area = (g: GridGroup): number => (g.cols ?? 1) * (g.rows ?? 1);
+  return groups.map((g, i) => {
+    if (g.parent !== undefined) {
+      let cur = i;
+      const seen = new Set<number>([i]);
+      for (;;) {
+        const p = groups[cur]?.parent;
+        const pi = p !== undefined ? byId.get(p) : undefined;
+        if (pi === undefined || seen.has(pi)) break;
+        seen.add(pi);
+        cur = pi;
+      }
+      return cur;
+    }
+    let best = i;
+    groups.forEach((o, oi) => {
+      if (containedBy(g, o) && (best === i || area(o) > area(groups[best] as GridGroup))) best = oi;
+    });
+    return best;
+  });
+}
+
+/**
+ * The hue of every group (`DESIGN.md` › Two channels). Outermost groups take
+ * the hue they name, else the family hue most of their nodes share, else the
+ * next free hue (see {@link assignPanelHues}) — so neighbours differ. A
+ * nested group (subnet in a zone in a region) repeats its outermost group's
+ * hue unless it names its own: one zone, one hue, at every depth. A hex
+ * colour gets no hue (the legacy tint). `auto: false` names hues only where
+ * the author wrote one.
+ */
+export function groupHues(groups: readonly GridGroup[], members: readonly HuedCell[], auto = true): (Hue | undefined)[] {
+  const roots = groupRoots(groups);
+  const top = groups.map((_, i) => i).filter((i) => roots[i] === i);
+  const memberHues = groupMemberHues(groups, members);
+  const topHues = assignPanelHues(
+    top.map((i) => groups[i]?.color),
+    top.map((i) => memberHues[i]),
+    auto,
+  );
+  const byTop = new Map<number, Hue | undefined>(top.map((i, k) => [i, topHues[k]]));
+  return groups.map((g, i) => {
+    if (byTop.has(i)) return byTop.get(i);
+    if (g.color !== undefined) return hueOf(g.color);
+    return auto ? byTop.get(roots[i] ?? i) : undefined;
+  });
+}
+
+/**
  * Renders the `<g data-bl="groups">…</g>` layer: one dashed outline + corner
  * label per group (`data-bp="groups.N"`), largest groups first so smaller
  * ones layer on top, nested groups inset by containment depth with their
@@ -221,6 +310,8 @@ export function gridGroupsSvg(groups: readonly GridGroup[], geo: GridGroupGeom):
         : area(b.g) - area(a.g),
     );
 
+  const hues = geo.skin === true ? groupHues(groups, geo.members ?? [], geo.autoHue !== false) : [];
+
   let s = `<g${bl('groups')}>`;
   for (const { g, gi } of sortedGroups) {
     const raw = groupRect(g);
@@ -239,6 +330,23 @@ export function gridGroupsSvg(groups: readonly GridGroup[], geo: GridGroupGeom):
     // level, so a subnet's tab sits under its region's, not on its zone's.
     const nested = nest.declared ? depth % 2 === 1 : depth > 0;
     if (geo.skin === true) {
+      const hue = hues[gi];
+      if (hue !== undefined) {
+        // The hue panel: a faint tint, the hairline outline, the tab in the hue.
+        // A nested panel lays a thinner tint over its container's, so depth
+        // reads as a step, not as a new colour.
+        const cls = `t-eyebrow${hueClass(hue)}`;
+        const op = depth > 0 ? 0.4 : 0.6;
+        const tab = nested
+          ? `<text x="${r.x + r.w - 12}" y="${r.y + 16}" class="${cls}" text-anchor="end">${escapeHtml(g.label)}</text>`
+          : `<text x="${r.x + 12}" y="${r.y + 16}" class="${cls}">${escapeHtml(g.label)}</text>`;
+        s +=
+          `<g${bp(`groups.${gi}`)}>` +
+          `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="6" fill="${hueTint(hue)}" fill-opacity="${op}" stroke="var(--rule-solid)" stroke-width="1"/>` +
+          tab +
+          `</g>`;
+        continue;
+      }
       const tint = safeColor(g.color, '');
       // An authored colour is pulled toward `ink` before it strokes or labels
       // anything, so it clears the surface in both sets: darker on paper,
@@ -270,4 +378,53 @@ export function gridGroupsSvg(groups: readonly GridGroup[], geo: GridGroupGeom):
   }
   s += `</g>`; // close the groups list container
   return s;
+}
+
+/** Approximate advance of one `.t-eyebrow` character (8.5px mono, .14em tracking). */
+const EYEBROW_CHAR_W = 6.4;
+
+/** One group's panel rect and which side its tab sits on. */
+function panelGeometry(
+  groups: readonly GridGroup[],
+  geo: Omit<GridGroupGeom, 'skin'>,
+): Array<{ g: GridGroup; r: { x: number; y: number; w: number; h: number }; tabRight: boolean }> {
+  if (groups.length === 0) return [];
+  const nesting = resolveNesting(groups);
+  return groups.map((g) => {
+    const nest = nesting.get(g) ?? { depth: 0, inset: { x: 0, y: 0, w: 0, h: 0 }, declared: false, height: 0 };
+    const r = {
+      x: geo.xOf(g.col) - 28 + nest.inset.x,
+      y: geo.yOf(g.row) - 38 + nest.inset.y,
+      w: (g.cols ?? 1) * geo.cellW + ((g.cols ?? 1) - 1) * geo.gapX + 56 - nest.inset.w,
+      h: (g.rows ?? 1) * geo.cellH + ((g.rows ?? 1) - 1) * geo.gapY + 66 - nest.inset.h,
+    };
+    return { g, r, tabRight: nest.declared ? nest.depth % 2 === 1 : nest.depth > 0 };
+  });
+}
+
+/**
+ * Each group's panel rect, as {@link gridGroupsSvg} draws it — the edge router
+ * keeps routes from running along a panel border (see `RouterOptions.rails`).
+ */
+export function groupPanelRects(
+  groups: readonly GridGroup[],
+  geo: Omit<GridGroupGeom, 'skin'>,
+): Array<{ x: number; y: number; w: number; h: number }> {
+  return panelGeometry(groups, geo).map((p) => p.r);
+}
+
+/**
+ * The box each group's skin label (its `.t-eyebrow` tab) covers, so the edge
+ * router keeps lines off the label text. Mirrors the panel geometry of
+ * {@link gridGroupsSvg} (same rect, nesting insets and tab side).
+ */
+export function groupLabelBoxes(
+  groups: readonly GridGroup[],
+  geo: Omit<GridGroupGeom, 'skin'>,
+): Array<{ x: number; y: number; w: number; h: number }> {
+  return panelGeometry(groups, geo).map(({ g, r, tabRight }) => {
+    const tw = Math.ceil(g.label.length * EYEBROW_CHAR_W) + 4;
+    const tx = tabRight ? r.x + r.w - 12 - tw : r.x + 10;
+    return { x: tx, y: r.y + 6, w: tw, h: 13 };
+  });
 }

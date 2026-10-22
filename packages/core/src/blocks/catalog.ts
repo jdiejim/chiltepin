@@ -9,22 +9,23 @@ import { BLOCK_TYPES, type BlockType } from '../types.js';
 
 /** A ready-to-render fenced starter template per block type. */
 export const BLOCK_TEMPLATES: Record<BlockType, string> = {
-  meta: '```meta\ntitle: New document\nsubtitle: One-line description.\ntag: DRAFT\n```\n',
+  meta: '```meta\ntitle: New document\nsubtitle: One-line description.\ntag: DESIGN DOC\nstatus: draft\nowners: [Platform team]\nupdated: 2026-10-21\n```\n',
   callout:
-    '```callout\ntone: note\ntitle: Heads up\nbody: A short note that the reader should not miss.\n```\n',
-  table: '```table\ncolumns: [Field, Description]\nrows:\n  - [name, Display name]\n  - [id, Stable identifier]\n```\n',
+    '```callout\ntone: warn\ntitle: Replays past 48 hours bill twice\nbody: Replay only gaps younger than 48 hours. Older trips are already on an invoice.\n```\n',
+  table:
+    '```table\ncolumns: [Status, Meaning, Client action]\nrows:\n  - ["409", Capture already exists, Fetch it by id]\n  - ["429", Over 10 requests per second, Retry after Retry-After seconds]\n```\n',
   sequence:
-    '```sequence\nid: seq-example\nactors:\n  - { id: Client, name: Client }\n  - { id: Server, name: Server }\nmessages:\n  - Client -> +Server: request\n  - alt: cache hit\n  - Server --> -Client: 200 cached\n  - else: miss\n  - Server --> -Client: 200 fresh\n  - end\n```\n',
+    '```sequence\nid: seq-place-order\nactors:\n  - { id: web, name: checkout-web }\n  - { id: api, name: orders-api }\nmessages:\n  - web -> +api: POST /orders\n  - alt: stock reserved\n  - api --> web: 201 Created\n  - else: out of stock\n  - api --> -web: 409 Conflict\n  - end\n```\n',
   erd:
     '```erd\nid: erd-example\nentities:\n  - name: users\n    columns:\n      - { name: id, type: uuid, pk: true }\n  - name: orders\n    columns:\n      - { name: id, type: uuid, pk: true }\n      - { name: user_id, type: uuid, fk: true }\nrelations:\n  - users ||--o{ orders: places\n```\n',
   userstory:
-    '```userstory\nid: US-001\nrole: user\nwant: do the thing\nsoThat: I get the outcome\ncriteria:\n  - { given: a precondition, when: I act, then: the outcome }\n```\n',
+    '```userstory\nid: US-142\nrole: returning shopper\nwant: save a card at checkout\nsoThat: I skip card entry on my next order\ncriteria:\n  - { given: a saved card, when: I check out, then: the card is preselected }\n```\n',
   timeline:
-    '```timeline\nitems:\n  - "[current] now · Phase 1 · What is happening now"\n  - "[next] next · Phase 2 · What is next"\n```\n',
+    '```timeline\nitems:\n  - "[done] 2026-08 · Dual write · Both stores take every order"\n  - "[current] 2026-09 · Backfill · 480M rows copy in batches"\n  - "[next] 2026-10 · Read new · Reads switch behind the flag"\n```\n',
   kanban:
-    '```kanban\ncolumns:\n  - label: Now\n    cards:\n      - { title: Current task }\n  - label: Next\n    cards:\n      - { title: Upcoming task }\n  - label: Later\n    cards:\n      - { title: Eventually }\n```\n',
+    '```kanban\ncolumns:\n  - label: Now\n    cards:\n      - { title: Rate-limit POST /refunds }\n  - label: Next\n    cards:\n      - { title: Mask card BINs in worker logs }\n  - label: Later\n    cards:\n      - { title: Multi-region failover drill }\n```\n',
   prose:
-    '```prose\ntitle: Overview\nblocks:\n  - { type: h, text: Background }\n  - { type: p, text: A paragraph explaining the context. }\n  - { type: ul, items: [Idea one, Idea two, Idea three] }\n```\n',
+    '```prose\ntitle: Why refunds are async\nblocks:\n  - { type: h, text: The constraint }\n  - { type: p, text: The acquirer confirms a refund within 48 hours. }\n  - { type: ul, items: [The API returns 202 at once, A webhook reports the result, Support sees the state in the console] }\n```\n',
   glossary:
     '```glossary\nterms:\n  - { term: Idempotency, def: Doing a thing twice has the same effect as doing it once. }\n  - { term: SLO, def: Service-level objective the team commits to. }\n```\n',
   proscons:
@@ -32,7 +33,7 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   cvt:
     '```cvt\ntitle: Migration plan\ncurrent:\n  label: Today\n  items: [Single monolith, Shared database, Manual deploys]\ntarget:\n  label: Target\n  items: [Modular services, Per-service stores, Automated deploys]\nnote: Migrate one service per quarter.\n```\n',
   stats:
-    '```stats\ntitle: This quarter\nstats:\n  - { value: 12.4k, label: Active users, delta: "+18%", trend: up }\n  - { value: 99.95%, label: Uptime, delta: "0", trend: flat }\n  - { value: 142ms, label: p95 latency, delta: "-22ms", trend: up }\n```\n',
+    '```stats\ntitle: This quarter\nstats:\n  - { value: 12.4k, label: Active users, delta: "+18%", better: up }\n  - { value: 99.95%, label: Uptime, delta: "0", better: up }\n  - { value: 142ms, label: p95 latency, delta: "-22ms", better: down }\n```\n',
   code:
     '```code\ncols: 2\nlines: true\nblocks:\n  - title: add.ts\n    lang: TypeScript\n    highlight: "2"\n    code: |\n      export function add(a: number, b: number): number {\n        return a + b;\n      }\n  - title: add.test.ts\n    code: expect(add(2, 2)).toBe(4);\n```\n',
   agenda:
@@ -42,23 +43,23 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   pyramid:
     '```pyramid\nlevels:\n  - { label: Vision, desc: Long-term direction }\n  - { label: Strategy, desc: How we get there }\n  - { label: Tactics, desc: This quarter }\n  - { label: Tasks, desc: This week }\n```\n',
   flow:
-    '```flow\ntitle: Decision flow\nnodes:\n  - { id: start, col: 1, row: 1, kind: start, label: Start }\n  - { id: check, col: 2, row: 1, kind: decision, label: Is valid? }\n  - { id: yes, col: 3, row: 1, kind: process, label: Process }\n  - { id: no, col: 2, row: 2, kind: end, label: Reject }\n  - { id: done, col: 3, row: 2, kind: end, label: Done }\nedges:\n  - start -> check\n  - check -> yes: "yes"\n  - check -x-> no: "no"\n  - yes -> done\n```\n',
+    '```flow\ntitle: Refund approval in the support console\nnodes:\n  - { id: req, kind: start, label: Refund requested }\n  - { id: amt, kind: decision, label: Under $400? }\n  - { id: clerk, kind: human, label: Billing clerk reviews }\n  - { id: issue, kind: process, label: Issue refund }\n  - { id: paid, kind: end, label: Refund paid }\n  - { id: denied, kind: end, label: Refund denied }\nedges:\n  - req -> amt\n  - amt -> issue: "yes"\n  - amt -> clerk: "no"\n  - clerk -> issue: approves\n  - clerk -x-> denied: rejects\n  - issue -> paid\n```\n',
   state:
     '```state\ntitle: Order lifecycle\nstates:\n  - { id: s0, col: 1, row: 1, kind: start }\n  - { id: pending, col: 2, row: 1, kind: wait, name: PENDING }\n  - { id: confirmed, col: 3, row: 1, kind: active, name: CONFIRMED }\n  - { id: end, col: 4, row: 1, kind: terminal }\ntransitions:\n  - { from: s0, to: pending, event: create }\n  - { from: pending, to: confirmed, event: pay }\n  - { from: confirmed, to: end, event: ship }\n```\n',
   dfd:
-    '```dfd\ntitle: Data flow\nnodes:\n  - { id: ext, col: 1, row: 1, kind: external, name: Client }\n  - { id: proc, col: 2, row: 1, kind: process, name: Process, num: 1 }\n  - { id: store, col: 3, row: 1, kind: store, name: Orders }\nedges:\n  - { from: ext, to: proc, label: request }\n  - { from: proc, to: store, label: write }\n```\n',
+    '```dfd\ntitle: Order intake data flow\nnodes:\n  - { id: shop, kind: external, name: Storefront }\n  - { id: val, kind: process, name: Validate order, num: 1 }\n  - { id: store, kind: store, name: orders-db }\nedges:\n  - { from: shop, to: val, label: order form }\n  - { from: val, to: store, label: valid order }\n```\n',
   journey:
     '```journey\ntitle: Onboarding journey\nstages:\n  - { label: Discover }\n  - { label: Sign up }\n  - { label: Activate }\n  - { label: Pay }\nrows:\n  - { label: Touchpoint, cells: [Landing, Form, Email, Checkout] }\n  - { label: Friction, cells: [Low, Med, Low, Med] }\nemotion: [0.7, 0.4, 0.6, 0.8]\n```\n',
   gantt:
-    '```gantt\ntitle: Roadmap\nperiods: [Q1, Q2, Q3, Q4]\ntasks:\n  - { label: Discovery, start: 0, span: 1, kind: done }\n  - { label: Build, start: 1, span: 2, kind: active }\n  - { label: Ship, start: 3, span: 1 }\n  - { label: GA, start: 3, span: 1, kind: milestone }\n```\n',
+    '```gantt\ntitle: Orders store migration\nperiods: [Q1, Q2, Q3, Q4]\ntasks:\n  - { label: Schema design, start: 0, span: 1, kind: done }\n  - { label: Dual write and backfill, start: 1, span: 2, kind: active }\n  - { label: Read cutover, start: 3, span: 1 }\n  - { label: Old table dropped, start: 3, span: 1, kind: milestone }\n```\n',
   graph:
-    '```graph\ntitle: Dependency graph\nnodes:\n  - { id: a, col: 1, row: 1, label: Module A, group: 0 }\n  - { id: b, col: 2, row: 1, label: Module B, group: 1 }\n  - { id: c, col: 3, row: 1, label: Module C, group: 2 }\n  - { id: d, col: 2, row: 2, label: Shared, group: 3 }\nedges:\n  - a -> b\n  - b -> c\n  - a -> d\n  - { from: b, to: d, dir: undirected }\n```\n',
+    '```graph\ntitle: Dijkstra from the depot — after two visits\nnodes:\n  - { id: depot, col: 1, row: 1, label: Depot, state: visited }\n  - { id: north, col: 2, row: 1, label: North hub, state: visited }\n  - { id: south, col: 2, row: 2, label: South hub, state: frontier }\n  - { id: port, col: 3, row: 1, label: Port, state: frontier }\nedges:\n  - { from: depot, to: north, weight: 4 }\n  - { from: depot, to: south, weight: 6 }\n  - { from: north, to: port, weight: 5 }\n  - { from: south, to: port, weight: 2, dir: undirected }\n```\n',
   quadrant:
-    '```quadrant\ntitle: Effort vs impact\nxAxis: { label: Effort, low: Low, high: High }\nyAxis: { label: Impact, low: Low, high: High }\nitems:\n  - { x: 0.2, y: 0.8, label: Quick win }\n  - { x: 0.8, y: 0.8, label: Big bet }\n  - { x: 0.2, y: 0.2, label: Fill-in }\n  - { x: 0.8, y: 0.2, label: Thankless }\n```\n',
+    '```quadrant\ntitle: Effort vs impact\nxAxis: { label: Effort, low: Low, high: High }\nyAxis: { label: Impact, low: Low, high: High }\nitems:\n  - { x: 0.2, y: 0.8, label: Cache product pages }\n  - { x: 0.8, y: 0.8, label: Rewrite search }\n  - { x: 0.2, y: 0.2, label: Rename settings tabs }\n  - { x: 0.8, y: 0.2, label: Port legacy reports }\n```\n',
   swimlane:
-    '```swimlane\ntitle: Cross-functional flow\nlanes: [Customer, Sales, Ops]\nphases:\n  - { label: Intake, from: 1, to: 2 }\n  - { label: Delivery, from: 3 }\nsteps:\n  - req: Submit request · Customer · start\n  - { id: qual, lane: Sales, kind: decision, label: Qualify }\n  - { id: fulfill, lane: Ops, label: Fulfill, note: SLA 2 days, accent: true }\n  - done: Receive · Customer · end\nlinks:\n  - req -> qual\n  - qual -> fulfill: approved\n  - fulfill --> done: notify\n```\n',
+    '```swimlane\ntitle: Refund handoffs\nlanes: [Customer, Support, Finance]\nphases:\n  - { label: Intake, from: 1, to: 2 }\n  - { label: Payout, from: 3 }\nsteps:\n  - req: Request refund · Customer · start\n  - { id: check, lane: Support, kind: decision, label: Order eligible?, phase: Intake }\n  - { id: pay, lane: Finance, label: Issue refund, note: within 2 days, accent: true, phase: Payout }\n  - done: Receive refund · Customer · end\nlinks:\n  - req -> check\n  - check -> pay: eligible\n  - pay --> done: notifies\n```\n',
   c4:
-    '```c4\ntitle: System context\nlevel: context\nnodes:\n  - { id: user, col: 1, row: 1, kind: person, name: Shopper, desc: A customer placing an order. }\n  - { id: app, col: 2, row: 1, kind: system, name: ShopCo, desc: The retail platform. }\n  - { id: pay, col: 3, row: 1, kind: external, name: Payment GW, desc: Stripe authorisation. }\nedges:\n  - { from: user, to: app, label: places order }\n  - { from: app, to: pay, label: authorises }\n```\n',
+    '```c4\ntitle: Checkout containers\nlevel: container\nboundary: { label: Checkout platform }\nnodes:\n  - { id: user, kind: person, name: Shopper, desc: Buys from the web store. }\n  - { id: web, kind: container, family: web, name: Web store, tech: Next.js, desc: Shows the cart and takes the order. }\n  - { id: api, kind: container, name: Orders API, tech: Go, desc: Prices and confirms orders. }\n  - { id: db, kind: store, name: Orders DB, tech: Postgres, desc: Orders and payment state. }\n  - { id: pay, kind: external, name: Card acquirer, desc: Authorises card payments. }\nedges:\n  - { from: user, to: web, label: Places orders using, tech: HTTPS }\n  - { from: web, to: api, label: Submits orders to, tech: JSON/HTTPS }\n  - { from: api, to: db, label: Reads from and writes to, tech: SQL }\n  - { from: api, to: pay, label: Authorises payments with, tech: HTTPS }\n```\n',
   uml:
     '```uml\ntitle: Class model\nclasses:\n  - { id: order, col: 1, row: 1, name: Order, attrs: ["id: UUID", "status: Status", "total: Money"], methods: ["place()", "cancel()"] }\n  - { id: item, col: 2, row: 1, name: OrderItem, attrs: ["id: UUID", "sku: String", "qty: int"] }\n  - { id: status, col: 1, row: 2, name: Status, stereotype: enumeration, attrs: ["PENDING", "CONFIRMED", "CANCELLED"] }\nrels:\n  - { from: order, to: item, kind: composition }\n  - { from: order, to: status, kind: association, label: has }\n```\n',
   frontend:
@@ -66,7 +67,7 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   cluster:
     '```cluster\ntitle: Production cluster\nclusters:\n  - { id: api, label: api namespace, kind: namespace }\n  - { id: data, label: data namespace, kind: namespace }\nservices:\n  - { id: web, cluster: api, label: web, kind: service, tech: Next.js, replicas: 3 }\n  - { id: orders, cluster: api, label: orders, kind: service, tech: Go, replicas: 4 }\n  - { id: pg, cluster: data, label: postgres, kind: store, tech: Postgres 16, replicas: 1 }\n  - { id: redis, cluster: data, label: redis, kind: cache, tech: Redis 7, replicas: 2 }\nedges:\n  - { from: web, to: orders }\n  - { from: orders, to: pg }\n  - { from: orders, to: redis }\n```\n',
   block:
-    '```block\ntitle: System architecture\ngroups:\n  - { col: 1, row: 1, cols: 1, rows: 2, label: Edge, color: "#0e54a1" }\n  - { col: 2, row: 1, cols: 2, rows: 2, label: Services, color: "#1f9747" }\nnodes:\n  - { id: cdn, col: 1, row: 1, kind: cdn, name: CDN, tech: Cloudflare }\n  - { id: gw, col: 1, row: 2, kind: gateway, name: Gateway, tech: Envoy }\n  - { id: api, col: 2, row: 1, kind: service, name: API, tech: Go }\n  - { id: worker, col: 3, row: 1, kind: service, name: Worker, tech: Go }\n  - { id: pg, col: 2, row: 2, kind: store, name: Postgres, tech: "16" }\n  - { id: q, col: 3, row: 2, kind: queue, name: Events, tech: NATS }\nedges:\n  - cdn -> gw\n  - gw -> api\n  - api -> pg\n  - api -> q\n  - q --> worker\n```\n',
+    '```block\ntitle: Placing an order, step by step\ngroups:\n  - { col: 1, row: 1, cols: 1, rows: 2, label: Edge }\n  - { col: 2, row: 1, cols: 2, rows: 2, label: orders VPC }\nnodes:\n  - { id: cdn, col: 1, row: 1, kind: cdn, name: storefront CDN, tech: Cloudflare }\n  - { id: gw, col: 1, row: 2, kind: gateway, name: api-gateway, tech: Envoy }\n  - { id: api, col: 2, row: 1, kind: service, name: orders-api, tech: Go, replicas: 3 }\n  - { id: worker, col: 3, row: 1, kind: worker, name: fulfilment-worker, tech: Go }\n  - { id: pg, col: 2, row: 2, kind: db, name: orders-db, tech: Postgres 16 }\n  - { id: q, col: 3, row: 2, kind: queue, name: order-events, tech: NATS }\nedges:\n  - 1. cdn -> gw: forwards /api\n  - 2. gw -> api: routes POST /orders\n  - 3. api -> pg: writes order\n  - 4. api --> q: publishes order.placed\n  - 5. q --> worker: delivers order.placed\n```\n',
   felogic:
     '```felogic\ntitle: Frontend modules\nnodes:\n  - { id: hook, col: 1, row: 1, kind: hook, name: useOrders }\n  - { id: svc, col: 2, row: 1, kind: service, name: ordersService }\n  - { id: iface, col: 3, row: 1, kind: interface, name: OrdersClient }\n  - { id: impl, col: 4, row: 1, kind: strategy, name: HttpOrdersClient }\n  - { id: api, col: 5, row: 1, kind: external, name: Orders API }\nedges:\n  - { from: hook, to: svc }\n  - { from: svc, to: iface, kind: uses }\n  - { from: impl, to: iface, kind: implements }\n  - { from: impl, to: api, kind: egress, label: HTTPS }\n```\n',
   wireframe:
@@ -74,7 +75,7 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   endpoint:
     '```endpoint\nmethod: POST\npath: /orders\ntitle: Create an order\ndescription: Submit a cart and create a new order.\nauth: Bearer token\nparams:\n  - { name: idempotency-key, in: header, type: string, desc: Safe-retry key }\nbody:\n  - { name: items, type: "Item[]", required: true, desc: Line items }\n  - { name: coupon, type: string, desc: Optional discount code }\nresponses:\n  - { status: 201, desc: Order created }\n  - { status: 400, desc: Invalid cart }\n  - { status: 401, desc: Missing or invalid token }\nrequest: |\n  { "items": [{ "sku": "A1", "qty": 2 }] }\nresponse: |\n  { "id": "ord_123", "status": "pending" }\n```\n',
   pullquote:
-    '```pullquote\ntext: The whole design in one sentence.\nattribution: The takeaway\n```\n',
+    '```pullquote\ntext: We never hold a balance that we cannot rebuild from the journal.\nattribution: Payments Core, design review\n```\n',
   layers:
     '```layers\ntitle: The model in three layers\nitems:\n  - { kicker: L1, title: Identity, source: JWT, question: "Are you signed in?", body: Validate the token and resolve the user. }\n  - { kicker: L2, title: Scope, source: Lookup, question: "Which sites?", body: Confirm the request is in range. }\n  - { kicker: L3, title: Permission, source: App DB, question: "May you do this?", body: Check the action against the matrix. }\n```\n',
   matrix:
@@ -84,27 +85,27 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   composition:
     '```composition\ntitle: How access is decided\nresult: May read invoices\ngates:\n  - { label: Identity, desc: A valid signed-in user. }\n  - { label: Scope, desc: The request is in range. }\n  - { label: Permission, desc: The action is granted. }\n```\n',
   drivers:
-    '```drivers\ntitle: What shaped the design\nitems:\n  - { title: Single sign-on, body: One login carries the user everywhere., tag: "HOW: token", icon: lock, accent: purple }\n  - { title: Read per site, body: Access is scoped to the sites a user belongs to., tag: "WHERE: site group", icon: location, accent: green }\n  - { title: Governed roles, body: "An external IGA requests, approves, and certifies access.", tag: "WHO: role groups", icon: shield, accent: blue }\n  - { title: Per-app permissions, body: The same role does different things in each app., tag: "WHAT: matrix", icon: grid, accent: amber }\n```\n',
+    '```drivers\ntitle: What shaped the design\nitems:\n  - { title: Single sign-on, body: One login carries the user everywhere., tag: "HOW: token", icon: lock }\n  - { title: Read per site, body: Access is scoped to the sites a user belongs to., tag: "WHERE: site group", icon: location }\n  - { title: Governed roles, body: "An external IGA requests, approves, and certifies access.", tag: "WHO: role groups", icon: shield }\n  - { title: Per-app permissions, body: The same role does different things in each app., tag: "WHAT: matrix", icon: grid }\n```\n',
   options:
     '```options\ntitle: Approaches explored\nitems:\n  - { kicker: Option 1, title: App-managed roles, how: Roles live in our own DB; SSO only handles sign-in., pros: [Full control], cons: [Second source of truth, Custom tooling to govern], verdict: "REJECTED — fails the constraint", tone: rejected }\n  - { kicker: Option 2, title: Global role groups, how: Site groups for read; one global group per role., pros: [Fewest groups, Scales linearly], cons: ["A role applies at every site"], verdict: "VIABLE — kept as fallback", tone: viable }\n  - { kicker: Option 3, title: Per-site role groups, how: One group per persona per site., pros: [Least privilege by construction, Clean per-site audit], cons: [Most groups to manage], verdict: "CHOSEN — matches the constraints", tone: chosen }\n```\n',
   spec:
-    '```spec\ntitle: Per-site role groups\naccent: green\nrows:\n  - { label: Groups, value: "SiteN-Users (read) + SiteN-<Persona> per staffed plant." }\n  - { label: Roles, value: "Each group reads as (site, role); the token carries the full scope." }\n  - { label: Resolution, steps: [Decode token, "Read (site, role)", Check matrix] }\n  - { label: Cost, value: "Up to Sites x Roles groups; adding a role multiplies them." }\n```\n',
+    '```spec\ntitle: Per-site role groups\nrows:\n  - { label: Groups, value: "SiteN-Users (read) + SiteN-<Persona> per staffed plant." }\n  - { label: Roles, value: "Each group reads as (site, role); the token carries the full scope." }\n  - { label: Resolution, steps: [Decode token, "Read (site, role)", Check matrix] }\n  - { label: Cost, value: "Up to Sites x Roles groups; adding a role multiplies them." }\n```\n',
   list:
-    '```list\ntitle: What you get\nstyle: accent\nitems:\n  - { lead: Typed blocks, text: "76 strict schemas, validated by chiltepin check.", accent: blue }\n  - { lead: One source of truth, text: Diagrams live in the .md file., accent: green }\n  - { lead: Many outputs, text: "HTML, slides, and PDF from one file.", accent: amber }\n```\n',
+    '```list\ntitle: What the outbox guarantees\nstyle: accent\nitems:\n  - { lead: No lost events, text: "The event row commits in the same transaction as the order." }\n  - { lead: At-least-once delivery, text: "The relay retries until Kafka acknowledges the event." }\n  - { lead: Order per order_id, text: "The relay publishes rows in commit order for each order_id." }\n```\n',
   stories:
     '```stories\ntitle: Backlog\nitems:\n  - { id: US-1, title: One-step checkout, role: shopper, want: pay for my cart in one step, soThat: I finish faster, priority: High, points: 5, open: true, criteria: [{ given: I have items, when: I submit valid payment, then: an order is created }] }\n  - { id: US-2, title: Save payment method, role: returning shopper, want: store a card, soThat: I skip re-entry, priority: Med, points: 3 }\n```\n',
   pattern:
     '```pattern\nname: Repository\ncategory: Backend\nintent: Hide persistence behind a collection-like interface so the domain never sees the database.\nforces: [Swap the data store, Unit-test without a DB, No query leaks into the domain]\nparticipants:\n  - { name: OrderRepository, role: interface the service depends on }\n  - { name: PgOrderRepository, role: Postgres implementation }\n  - { name: OrderService, role: caller (domain logic) }\nconsequences:\n  pros: [Swappable storage, Testable with a fake, Clear seam]\n  cons: [Another layer, Risk of anemic pass-through methods]\n```\n',
   gallery:
-    '```gallery\ntitle: Bug gallery\ncols: 2\ndescription: A grid of code snippets — great for a comparison or a "spot the bug" set.\nitems:\n  - title: "N+1 query"\n    lang: JavaScript\n    accent: red\n    caption: "1000 users = 1001 queries. Fix: JOIN or batch."\n    code: |\n      users.forEach(async u => {\n        await db.query("SELECT * FROM orders WHERE user_id=?", u.id);\n      });\n  - title: "Off-by-one"\n    lang: JavaScript\n    accent: amber\n    caption: "arr[arr.length] is undefined. Fix: < not <=."\n    code: |\n      for (let i = 0; i <= arr.length; i++)\n        process(arr[i]);\n  - title: "Secrets in code"\n    lang: JavaScript\n    accent: red\n    caption: "Committed to the repo. Fix: env vars + a scanner."\n    code: |\n      const API_KEY = "sk-live-abc123";\n```\n',
+    '```gallery\ntitle: Bug gallery\ncols: 2\ndescription: A grid of code snippets — great for a comparison or a "spot the bug" set.\nitems:\n  - title: "N+1 query"\n    lang: JavaScript\n    caption: "1000 users = 1001 queries. Fix: JOIN or batch."\n    code: |\n      users.forEach(async u => {\n        await db.query("SELECT * FROM orders WHERE user_id=?", u.id);\n      });\n  - title: "Off-by-one"\n    lang: JavaScript\n    caption: "arr[arr.length] is undefined. Fix: < not <=."\n    code: |\n      for (let i = 0; i <= arr.length; i++)\n        process(arr[i]);\n  - title: "Secrets in code"\n    lang: JavaScript\n    caption: "Committed to the repo. Fix: env vars + a scanner."\n    code: |\n      const API_KEY = "sk-live-abc123";\n```\n',
   chart:
-    '```chart\ntitle: p95 latency by week\nkind: line\nunit: ms\nlabels: [W1, W2, W3, W4]\nseries:\n  - { label: /orders, accent: navy, values: [240, 220, 185, 150] }\n  - { label: /search, accent: teal, values: [310, 285, 260, 230] }\n```\n',
+    '```chart\ntitle: p95 latency by week\nkind: line\nunit: ms\nlabels: [W1, W2, W3, W4]\nseries:\n  - { label: /orders, values: [240, 220, 185, 150] }\n  - { label: /search, values: [310, 285, 260, 230] }\n```\n',
   figure:
     '```figure\nsrc: https://example.com/architecture.png\nalt: The deployment topology\ncaption: "The production topology: CDN, gateway, and two service tiers."\nwidth: 560\n```\n',
   steps:
     '```steps\ntitle: Deploy a hotfix\nitems:\n  - title: Branch from main\n    body: Hotfixes always branch from the latest main.\n    code: git checkout -b hotfix/fix-retry main\n    lang: bash\n  - title: Ship the fix\n    body: Commit and push; CI runs the full suite.\n    code: git push -u origin hotfix/fix-retry\n    lang: bash\n    note: CI must be green before the next step.\n  - title: Tag and deploy\n    code: git tag v1.4.1 && git push --tags\n    lang: bash\n```\n',
   faq:
-    '```faq\ntitle: Common questions\nitems:\n  - q: Where does the content live?\n    a: "In the .md files on disk — they are the single source of truth."\n    open: true\n  - q: Do diagrams need a drawing tool?\n    a: "No. Diagrams are typed YAML blocks; the renderer draws the SVG."\n  - q: How do I validate a doc?\n    a: Run chiltepin check and fix every diagnostic it reports.\n```\n',
+    '```faq\ntitle: Open before launch\nitems:\n  - q: Who sets the 0.85 decline threshold?\n    a: "The fraud risk lead, after the shadow run ends on 4 Nov."\n    open: true\n  - q: Do we keep the rules-only fallback after launch?\n    a: "Platform decides once the model meets its 40 ms deadline at p99 for a week."\n  - q: Who owns the review queue at night?\n    a: Not decided. The support lead answers by 28 Oct.\n```\n',
   envelope:
     '```envelope\ntitle: Write-path capacity\nassumptions:\n  - { label: Daily active users, value: 5M }\n  - { label: Writes / user / day, value: "4" }\nsteps:\n  - { label: Writes per day, calc: "5M × 4", result: 20M/day }\n  - { label: Write QPS, calc: "20M / 86,400 s", result: "≈ 230 rps" }\n  - { label: Peak QPS, calc: "230 × 3 (peak factor)", result: "≈ 700 rps" }\nresult: { label: Provision for, value: "~1,400 rps (2× peak headroom)" }\n```\n',
   slo:
@@ -114,11 +115,11 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   okr:
     '```okr\ntitle: Q3 objectives\nitems:\n  - objective: Make onboarding effortless\n    owner: Growth\n    krs:\n      - { kr: Time-to-first-doc under 5 minutes, progress: 0.7, status: on-track }\n      - { kr: Activation rate from 45% to 60%, progress: 0.4, status: at-risk }\n  - objective: Earn enterprise trust\n    owner: Platform\n    krs:\n      - { kr: Ship SSO + audit log, progress: 1, status: done }\n      - { kr: SOC 2 Type II report issued, progress: 0.2, status: off-track }\n```\n',
   persona:
-    '```persona\ntitle: Who we build for\npersonas:\n  - name: Maya Chen\n    role: Staff engineer\n    quote: I want the diagram in the PR diff, not in a wiki.\n    goals: [Docs that live with the code, Reviewable architecture changes]\n    frustrations: [Stale wiki pages, Screenshots of whiteboards]\n    tools: [VS Code, GitHub]\n    accent: blue\n  - name: Priya Patel\n    role: Engineering manager\n    quote: Every reorg breaks our onboarding docs.\n    goals: [One source of truth per system]\n    frustrations: ["Docs no one owns"]\n    tools: [Linear, Notion]\n    accent: teal\n```\n',
+    '```persona\ntitle: Who we build for\npersonas:\n  - name: Maya Chen\n    role: Staff engineer\n    quote: I want the diagram in the PR diff, not in a wiki.\n    goals: [Docs that live with the code, Reviewable architecture changes]\n    frustrations: [Stale wiki pages, Screenshots of whiteboards]\n    tools: [VS Code, GitHub]\n  - name: Priya Patel\n    role: Engineering manager\n    quote: Every reorg breaks our onboarding docs.\n    goals: [One source of truth per system]\n    frustrations: ["Docs no one owns"]\n    tools: [Linear, Notion]\n```\n',
   changelog:
     '```changelog\ntitle: Release history\nreleases:\n  - version: 2.0.0\n    date: 2026-06-24\n    tag: breaking\n    items:\n      - { type: changed, text: "Config moved from .rc to chiltepin.config.json" }\n      - { type: removed, text: Dropped Node 18 support }\n  - version: 1.4.0\n    date: 2026-05-12\n    tag: minor\n    items:\n      - { type: added, text: Dark theme }\n      - { type: fixed, text: Slide overflow on long tables }\n```\n',
   team:
-    '```team\ntitle: Who owns what\nmembers:\n  - { name: Ana Ruiz, role: Tech lead, focus: Rendering pipeline, accent: navy }\n  - { name: Sam Okafor, role: Backend, focus: Sync + integrations, accent: teal }\n  - { name: Lena Fischer, role: Design, focus: Themes and house style, accent: purple }\n```\n',
+    '```team\ntitle: Who owns what\nmembers:\n  - { name: Ana Ruiz, role: Tech lead, focus: Rendering pipeline }\n  - { name: Sam Okafor, role: Backend, focus: Sync + integrations }\n  - { name: Lena Fischer, role: Design, focus: Themes and house style }\n```\n',
   heatmap:
     '```heatmap\ntitle: p95 latency by region\nunit: ms\nxLabels: ["00", "06", "12", "18"]\nrows:\n  - { label: us-east-1, values: [120, 135, 210, 265] }\n  - { label: eu-west-1, values: [110, 150, 240, 190] }\n  - { label: ap-south-1, values: [180, 220, 310, 280] }\n```\n',
   scorecard:
@@ -148,13 +149,13 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   prompt:
     '```prompt\ntitle: Support reply template\nsegments:\n  - kind: system\n    label: role + guardrails\n    text: "You are a support agent for {{product}}. Answer from the docs only."\n  - kind: user\n    text: "Customer ({{plan}} plan) asks: {{question}}"\nvars:\n  - { name: product, desc: Product name from config }\n  - { name: plan, desc: Plan tier of the signed-in customer }\n  - { name: question, desc: The inbound message }\n```\n',
   context:
-    '```context\ntitle: Where the window goes\nwindow: 200000\nsegments:\n  - { label: system prompt, tokens: 6000, accent: navy }\n  - { label: tool schemas, tokens: 14000, accent: teal }\n  - { label: retrieval, tokens: 60000, accent: amber }\n  - { label: history, tokens: 70000, accent: purple }\n```\n',
+    '```context\ntitle: Where the window goes\nwindow: 200000\nsegments:\n  - { label: system prompt, tokens: 6000 }\n  - { label: tool schemas, tokens: 14000 }\n  - { label: retrieval, tokens: 60000 }\n  - { label: history, tokens: 70000 }\n```\n',
   archmap:
-    '```archmap\ntitle: Target platform architecture\ncols: 3\nareas:\n  - label: Customer channels\n    accent: blue\n    items:\n      - Web storefront\n      - { name: Mobile app, status: target }\n  - label: Commerce\n    accent: teal\n    items:\n      - Catalog\n      - Checkout\n      - { name: Promotions, status: gap }\n  - label: Platform services\n    accent: purple\n    desc: Shared capabilities every domain builds on.\n    items:\n      - Identity\n      - { name: Event bus, status: new }\n      - { name: Legacy ESB, status: deprecated }\n```\n',
+    '```archmap\ntitle: Target platform architecture\ncols: 3\nareas:\n  - label: Customer channels\n    items:\n      - Web storefront\n      - { name: Mobile app, status: target }\n  - label: Commerce\n    items:\n      - Catalog\n      - Checkout\n      - { name: Promotions, status: gap }\n  - label: Platform services\n    desc: Shared capabilities every domain builds on.\n    items:\n      - Identity\n      - { name: Event bus, status: new }\n      - { name: Legacy ESB, status: deprecated }\n```\n',
   divider:
-    '```divider\nkicker: PART 2\ntitle: What we change\nsubtitle: The three fixes, in the order we ship them.\naccent: navy\n```\n',
+    '```divider\nkicker: PART 2\ntitle: What we change\nsubtitle: The three fixes, in the order we ship them.\n```\n',
   bignumber:
-    '```bignumber\nvalue: "-75%"\nlabel: Checkout p95 after moving capture off the request path\ncontext: "2.4s → 600ms, measured over four weeks of production traffic"\ndelta: "-1.8s"\ntrend: down\naccent: green\n```\n',
+    '```bignumber\nvalue: "-75%"\nlabel: Checkout p95 after moving capture off the request path\ncontext: "2.4s → 600ms, measured over four weeks of production traffic"\ndelta: "-1.8s"\ntrend: down\n```\n',
   takeaways:
     '```takeaways\ntitle: Takeaways\nitems:\n  - text: The synchronous capture call was the bottleneck\n    detail: It accounted for 71% of the 2.4s checkout p95.\n  - text: Moving it to a queue cut p95 by 75%\n  - text: Conversion recovered within two weeks\n    detail: "+0.4pp against the pre-regression baseline."\n```\n',
   statustable:
@@ -162,11 +163,11 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   cycle:
     '```cycle\ntitle: Build–measure–learn\nsteps:\n  - { label: Build, desc: Ship the smallest testable change }\n  - { label: Measure, desc: Watch the one metric the change should move }\n  - { label: Learn, desc: Keep the change or roll it back }\ncenter: every release\n```\n',
   benchmark:
-    '```benchmark\ntitle: Retrieval engines, measured\nmetricLabel: Benchmark\nsubjects:\n  - { label: Ours, sub: v2.1, featured: true }\n  - { label: Vendor A }\n  - { label: Vendor B, tone: muted }\nrows:\n  - { label: Answer accuracy, sub: internal QA set, cells: ["82.4%", "79.1%", "74.8%"] }\n  - { label: p95 latency, sub: 500 rps soak, better: low, cells: ["310 ms", "420 ms", "290 ms"] }\n  - label: Cost per 1k queries\n    variants: [cached, cold]\n    better: low\n    cells:\n      - ["$0.14", "$0.90"]\n      - ["$0.21", "$1.10"]\n      - ["$0.18", "—"]\nnote: Single region, same corpus, October run.\n```\n',
+    '```benchmark\ntitle: Retrieval engines, measured\nmetricLabel: Benchmark\nsubjects:\n  - { label: Ours, sub: v2.1, featured: true }\n  - { label: Hosted vector DB }\n  - { label: BM25 baseline, tone: muted }\nrows:\n  - { label: Answer accuracy, sub: internal QA set, cells: ["82.4%", "79.1%", "74.8%"] }\n  - { label: p95 latency, sub: 500 rps soak, better: low, cells: ["310 ms", "420 ms", "290 ms"] }\n  - label: Cost per 1k queries\n    variants: [cached, cold]\n    better: low\n    cells:\n      - ["$0.14", "$0.90"]\n      - ["$0.21", "$1.10"]\n      - ["$0.18", "—"]\nnote: Single region, same corpus, October run.\n```\n',
   sankey:
     '```sankey\ntitle: Where the cloud bill goes\nunit: "k"\nlinks:\n  - { from: Bill, to: Compute, value: 62 }\n  - { from: Bill, to: Storage, value: 28 }\n  - { from: Bill, to: Network, value: 10 }\n  - { from: Compute, to: Batch, value: 24 }\n  - { from: Compute, to: Serving, value: 38 }\n```\n',
   gitgraph:
-    '```gitgraph\ntitle: Release model\nbranches:\n  - { name: main, accent: navy }\n  - { name: feature, accent: teal }\ncommits:\n  - { label: baseline }\n  - { branch: feature, label: spike }\n  - { branch: feature, label: review fixes }\n  - { merge: feature, label: ship it, tag: v1.2.0, kind: release }\n```\n',
+    '```gitgraph\ntitle: Release model\nbranches:\n  - { name: main }\n  - { name: feature }\ncommits:\n  - { label: baseline }\n  - { branch: feature, label: spike }\n  - { branch: feature, label: review fixes }\n  - { merge: feature, label: ship it, tag: v1.2.0, kind: release }\n```\n',
   treemap:
     '```treemap\ntitle: Cloud spend by service\nunit: k\nitems:\n  - { label: Compute, value: 62, desc: EC2 + Lambda }\n  - { label: Storage, value: 28 }\n  - { label: Network, value: 10 }\n  - { label: Observability, value: 7, accent: amber }\n```\n',
   packet:
@@ -200,7 +201,7 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   modelcard:
     '```modelcard\nname: support-intent-v3\nversion: 3.2.0\ntask: Text classification (support ticket intent)\narchitecture: DistilBERT fine-tune, 6 layers\nparams: 66M\nowner: ML platform\nlicense: Internal\nintendedUse:\n  - Route inbound tickets to one of 14 queues\n  - Suggest a queue to an agent; never auto-close\noutOfScope:\n  - Any language other than English and Spanish\ntrainingData:\n  - 410k tickets, 2024-01 to 2025-06, PII scrubbed\nmetrics:\n  - { name: Macro F1, value: 0.91, split: test }\n  - { name: Latency p95, value: 38 ms, split: prod, note: CPU, batch 1 }\nlimitations:\n  - Confuses billing and refund intents on short tickets\n```\n',
   mindmap:
-    '```mindmap\ncenter: Onboarding v2\nnodes:\n  - { id: acct, label: Account, accent: blue }\n  - { id: sso, parent: acct, label: SSO first }\n  - { id: invite, parent: acct, label: Team invites }\n  - { id: data, label: Data import, accent: teal }\n  - { id: csv, parent: data, label: CSV }\n  - { id: api, parent: data, label: API sync }\n  - { id: learn, label: Learning, accent: amber }\n  - { id: tour, parent: learn, label: Product tour }\n  - { id: tmpl, parent: learn, label: Templates }\n```\n',
+    '```mindmap\ncenter: Onboarding v2\nnodes:\n  - { id: acct, label: Account }\n  - { id: sso, parent: acct, label: SSO first }\n  - { id: invite, parent: acct, label: Team invites }\n  - { id: data, label: Data import, accent: teal }\n  - { id: csv, parent: data, label: CSV }\n  - { id: api, parent: data, label: API sync }\n  - { id: learn, label: Learning }\n  - { id: tour, parent: learn, label: Product tour }\n  - { id: tmpl, parent: learn, label: Templates }\n```\n',
   audit:
     '```audit\ntitle: Security review — payments service\nscope: payments-api, payments-worker\ndate: 2026-09-01\nauditor: AppSec\nfindings:\n  - { id: F1, title: Refund endpoint has no rate limit, severity: high, area: API, evidence: "POST /refunds accepted 500 req/s in the load test", fix: Add the shared limiter at 20 req/min per key, owner: payments, status: fixing }\n  - { id: F2, title: Card BIN logged at INFO, severity: critical, area: Logging, evidence: "worker.log line 2231", fix: Mask to first 2 digits; add the log-scrub test, owner: payments, status: open }\n  - { id: F3, title: Dependency openssl 3.0.8 has a known CVE, severity: medium, area: Supply chain, fix: Bump to 3.0.14, owner: platform, status: fixed }\n  - { id: F4, title: Health endpoint leaks build SHA, severity: info, area: API, status: accepted }\n```\n',
   checklist:
@@ -210,7 +211,7 @@ export const BLOCK_TEMPLATES: Record<BlockType, string> = {
   percentiles:
     '```percentiles\ntitle: Checkout API latency — last 7 days\nunit: ms\nslo: 300\nrows:\n  - { label: POST /checkout, p50: 120, p90: 210, p95: 260, p99: 420, max: 1900 }\n  - { label: GET /cart, p50: 18, p90: 35, p95: 48, p99: 90, max: 410 }\n  - { label: POST /payments, p50: 240, p90: 380, p95: 470, p99: 900, max: 3100, accent: red }\n```\n',
   usecase:
-    '```usecase\nsystem: Ticketing\nactors:\n  - { id: cust, name: Customer }\n  - { id: agent, name: Support agent }\n  - { id: pay, name: Payment gateway, kind: system, side: right }\ncases:\n  - { id: buy, name: Buy ticket }\n  - { id: pay1, name: Pay by card }\n  - { id: refund, name: Request refund }\n  - { id: approve, name: Approve refund }\nlinks:\n  - cust -> buy\n  - cust -> refund\n  - agent -> approve\n  - pay -> pay1\nrelations:\n  - { from: buy, to: pay1, kind: include }\n  - { from: refund, to: approve, kind: extend }\n```\n',
+    '```usecase\nsystem: Ticketing\nfocus: buy\nactors:\n  - { id: cust, name: Customer }\n  - { id: agent, name: Support agent }\n  - { id: gw, name: Payment gateway, kind: system }\ncases:\n  - { id: buy, name: Buy ticket }\n  - { id: pay, name: Pay by card }\n  - { id: promo, name: Apply promo code }\n  - { id: refund, name: Request refund }\n  - { id: approve, name: Approve refund }\nlinks:\n  - cust -> buy\n  - cust -> refund\n  - agent -> approve\n  - gw -> pay\n  - gw -> approve\nrelations:\n  - { from: buy, to: pay, kind: include }\n  - { from: promo, to: buy, kind: extend, label: code entered }\n```\n',
   pkg:
     '```pkg\ntitle: Backend module layout\npackages:\n  - { id: api, col: 1, row: 1, name: api, contains: [routes, middleware] }\n  - { id: domain, col: 2, row: 1, name: domain, contains: [orders, payments, inventory] }\n  - { id: infra, col: 3, row: 1, name: infra, contains: [postgres, kafka, stripe] }\n  - { id: shared, col: 2, row: 2, name: shared, contains: [ids, money, clock] }\ndeps:\n  - { from: api, to: domain, kind: use }\n  - { from: domain, to: infra, kind: import, label: ports only }\n  - { from: domain, to: shared }\n  - { from: infra, to: shared }\n```\n',
   timing:
@@ -282,8 +283,8 @@ export function isBlockFamily(value: string): value is BlockFamily {
 
 /**
  * Which family each block belongs to — compile-time exhaustive over
- * {@link BlockType}, and mirrors `reference/blocks/INDEX.md` in the skill
- * (the `charts-overviews.md` family file is the `charts` family here).
+ * {@link BlockType}. Each family has one selection sheet in the skill's
+ * `reference/blocks/` (the `charts-overviews.md` file is the `charts` family).
  */
 export const BLOCK_FAMILY: Record<BlockType, BlockFamily> = {
   meta: 'narrative',
@@ -517,7 +518,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
 
 /** One-line "what it's for" per block, keyed exhaustively by {@link BlockType}. */
 export const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
-  meta: 'Document cover — title, subtitle, tag, and an optional logo.',
+  meta: 'Document cover — title, subtitle, tag, status, owners, reviewers, date, version, and an optional logo.',
   callout: 'A single aside — note, tip, warning, or danger.',
   table: 'Genuinely tabular data; cells can carry a tone.',
   sequence: 'Messages between actors over time (lifelines + returns).',
@@ -529,7 +530,7 @@ export const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   glossary: 'Term → definition rows.',
   proscons: 'Two columns weighed against each other — pros vs cons.',
   cvt: 'Current → target, before / after panels.',
-  stats: 'KPI cards with a delta and an up / down / flat trend.',
+  stats: 'KPI cards with a delta; `better: up | down` colours the delta good or bad.',
   code: 'Code the reader will copy or diff: highlighted snippets with `highlight` line ranges, `lines` numbers, and a `cols` grid; `kind: compare` sets before / after side by side, `kind: diff` a unified diff, `kind: terminal` a shell session.',
   agenda: 'A meeting agenda — time, duration, owner, topic per row.',
   tree: 'An indented file / folder hierarchy; `variant: issue` renders a MECE issue tree.',
@@ -542,7 +543,7 @@ export const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   graph: 'A generic node-link graph with colour-cycled groups.',
   quadrant: 'A 2×2 matrix (e.g. effort vs impact) with plotted items.',
   swimlane: 'Who does which step, in what order — one lane per owner, columns from the links, phase bands.',
-  c4: 'C4 model — context / container / component.',
+  c4: 'C4 model — context, container and component levels, and the dynamic view.',
   uml: 'A class diagram — attributes, methods, UML relationships.',
   frontend: 'A top-down component tree (root / layout / page / hook / store).',
   cluster: 'Kubernetes-style namespaces holding services, with replicas.',
@@ -563,7 +564,7 @@ export const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   pattern: 'A design-pattern card — intent · forces · participants · consequences.',
   gallery: 'A responsive grid of cards — code snippets or notes (e.g. a bug gallery or comparison).',
   chart:
-    'A data chart — bar / line / area / scatter / donut / pie / gauge / radar / waterfall / funnel / histogram / bell / boxplot / pareto / bullet, pure SVG, series coloured by accent.',
+    'A data chart — bar / line / area / scatter / donut / pie / gauge / radar / waterfall / funnel / histogram / bell / boxplot / pareto / bullet / dumbbell, pure SVG, series coloured by accent.',
   figure: 'An image with a caption in a bordered card (optional pixel width cap).',
   steps: 'A numbered how-to / runbook stepper — title, body, command, note per step.',
   faq: 'Q&A accordions — native details/summary, no JavaScript.',

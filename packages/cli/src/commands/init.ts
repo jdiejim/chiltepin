@@ -17,14 +17,13 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The skill's reference files, in stitch order (hub first, then the block
- * index, the block families, recipes, and the authoring guidance). `chiltepin skill`
+ * families, recipes, and the authoring guidance). `chiltepin skill`
  * and the MCP embed concatenate exactly this list; the on-disk folder may
- * carry more (the exemplars), which stay out of the single-file form.
+ * carry more (the worked derivations), which stay out of the single-file form.
  *
  * This is the one list of skill reference files the CLI stitches for `chiltepin skill`.
  */
 export const SKILL_REFERENCE_FILES: readonly string[] = [
-  'reference/blocks/INDEX.md',
   'reference/blocks/narrative.md',
   'reference/blocks/tables-data.md',
   'reference/blocks/api.md',
@@ -39,12 +38,14 @@ export const SKILL_REFERENCE_FILES: readonly string[] = [
   'reference/blocks/agentic.md',
   'reference/blocks/quality.md',
   'reference/recipes.md',
+  'reference/kit.md',
   'reference/patterns.md',
   'reference/patterns-design.md',
   'reference/mermaid.md',
   'reference/writing.md',
   'reference/check.md',
   'reference/system-design.md',
+  'reference/c4.md',
   'reference/decks.md',
   'reference/intake.md',
   'reference/organizing.md',
@@ -112,11 +113,24 @@ export function skillDir(): string {
  */
 export async function stitchSkill(srcRoot: string = skillDir()): Promise<string> {
   const parts = await Promise.all(SKILL_FILES.map((f) => readFile(resolve(srcRoot, f), 'utf8')));
-  return (parts.map((p) => p.trimEnd()).join('\n\n---\n\n') + '\n').replaceAll(
-    'live beside this file — read them on demand',
-    'are included in full below — read them on demand',
+  return (
+    (parts.map((p) => p.trimEnd()).join('\n\n---\n\n') + '\n').replaceAll(
+      'live beside this file — read them on demand',
+      'are included in full below — read them on demand',
+    ) + DERIVATIONS_NOTE
   );
 }
+
+/**
+ * The single-file form leaves out the worked derivations (reasoning examples,
+ * kept out on purpose so the prompt stays small). The hub's table still names
+ * `reference/derivations/*.md`, so the stitched form says where they are.
+ */
+export const DERIVATIONS_NOTE =
+  '\n---\n\n## Not in this file: the worked derivations\n\n' +
+  'The worked derivations (`reference/derivations/*.md`) are repo-only. This single file does not include them. ' +
+  'Read them at https://github.com/jdiejim/chiltepin/tree/main/skills/chiltepin/reference/derivations, ' +
+  'or install the full skill with `npx skills add jdiejim/chiltepin -y`.\n';
 
 interface InitOptions {
   readonly cwd: string;

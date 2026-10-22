@@ -1,8 +1,8 @@
 # Generation eval — end-to-end scenarios across the block families.
 #
 # A fresh agent gets ONE request, the installed skill, and a working `chiltepin`
-# (through `npx -y chiltepin`). It follows the skill's fast path in full: pick,
-# `chiltepin block`, write, `chiltepin check`, fix. Unlike evals/write, the agent MAY run
+# (through `npx -y chiltepin`). It runs the skill's loop in full: ground, plan,
+# `chiltepin block`, write, `chiltepin check`, `chiltepin review`, fix. Unlike evals/write, the agent MAY run
 # the CLI — that is the product. The first draft is captured before any check
 # so first-write quality and final quality are both scored.
 #
@@ -347,3 +347,56 @@
   acceptable: [list]
   wrong: [table, prose, faq]
 
+
+# ── Added 2026-10-20: fidelity cases. Each request names its own parts, so a
+# diagram copied from a skill example instead of built from the request loses
+# them. `facts` lists what the diagrams must carry (alternatives with `|`);
+# evals/generate/quality.mjs scores the share of facts drawn, template echo,
+# and edge geometry.
+
+- id: coding-agent
+  family: agentic
+  request: "Draw how our coding agent works: a planner on Opus splits a GitHub issue into tasks; up to three workers on Sonnet each run in their own Firecracker sandbox with shell, file-edit, and test-runner tools; a reviewer agent reads each diff and can send it back once; CI has to pass and a maintainer merges."
+  expected: [flow, block]
+  acceptable: [swimlane, sequence]
+  wrong: [agentloop, table, steps]
+  facts: [planner, opus, github issue|issue, worker, sonnet, firecracker|sandbox, shell, file-edit|file edit|edit, test, reviewer, diff, ci, maintainer, merge]
+
+- id: voice-assistant
+  family: agentic
+  request: "Explain our voice assistant end to end: the phone streams audio to Whisper for transcription, an intent router on Haiku picks the calendar tool, the email tool, or small talk, every reply passes a safety filter, and ElevenLabs speaks it back. Calendar and email calls go through the user's OAuth token."
+  expected: [flow, block]
+  acceptable: [sequence, swimlane]
+  wrong: [agentloop, table, steps]
+  facts: [phone, whisper, router|intent, haiku, calendar, email, small talk, safety, elevenlabs, oauth]
+
+- id: fraud-scoring
+  family: architecture
+  request: "Document how a card payment gets a fraud decision in under 80 ms: the payment gateway calls the scoring service, which reads features from a Redis feature store, runs the rules engine and an XGBoost model in parallel, and returns approve, review, or decline. Every decision goes to Kafka and lands in Snowflake; review cases go to an analyst queue."
+  expected: [block, sequence]
+  acceptable: [flow, c4, dfd, spans]
+  wrong: [table, steps, timeline]
+  facts: [gateway, scoring, redis|feature store, rules, xgboost, approve, review, decline, kafka, snowflake, analyst, 80 ms|80ms]
+
+- id: contract-ingest
+  family: agentic
+  request: "Write the design doc for the contract-ingestion service: PDFs arrive by email and S3 upload, Textract runs OCR, Claude extracts parties, dates, and amounts into a JSON schema, a validator sends low-confidence fields to a paralegal review queue, and approved records go to Postgres. Include what fails and how we retry."
+  expected: [flow, block]
+  acceptable: [sequence, dfd, swimlane, state]
+  wrong: [agentloop, table]
+  facts: [email, s3, textract|ocr, claude, parties, dates, amounts, json schema|schema, validator|confidence, paralegal, postgres, retry]
+
+- id: orchestrator-incident
+  family: agentic
+  request: "Document our incident orchestrator agent. When PagerDuty pages, an orchestrator agent on Claude Opus reads the alert and plans the investigation. It fans out to three subagents on Sonnet that run in parallel: a logs agent that queries Datadog, a deploys agent that reads deploy history from GitHub, and a runbook agent that searches a vector index of our runbooks. Each subagent returns findings with evidence links. The orchestrator merges them into one diagnosis and can send the subagents out for another round if there are gaps. It posts the diagnosis to the incident's Slack channel. If the diagnosis proposes a rollback or a restart, a policy guard blocks it until the on-call engineer approves in Slack; approved actions run through the Argo CD tool. The run stops after 10 tool rounds or 15 minutes and hands off what it has."
+  expected: [flow, block]
+  acceptable: [swimlane, sequence]
+  wrong: [agentloop, table, steps]
+  facts: [pagerduty, orchestrator, opus, sonnet, logs, datadog, deploy, github, runbook, vector|index, findings|evidence, diagnosis, gaps|round, slack, rollback|restart, guard|policy, on-call|oncall, approv, argo, 10 tool rounds|10 rounds|max 10, 15 min]
+
+- id: orchestrator-open
+  family: agentic
+  request: "Make an example doc of an orchestrator agent: how an orchestrator agent splits a job across subagents and puts the results back together."
+  expected: [flow, block]
+  acceptable: [swimlane, sequence]
+  wrong: [agentloop, table, steps]

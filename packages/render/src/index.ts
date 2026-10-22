@@ -11,7 +11,13 @@ export { houseCss, LIGHT_SET, DARK_SET, systemSchemeCss } from './css.js';
 export { FAVICON_SVG, FAVICON_DATA_URI, FAVICON_LINK } from './brand.js';
 export { escapeHtml } from './escape.js';
 export { safeColor, safeUrl } from './sanitize.js';
-export { renderProse } from './markdown.js';
+export { renderProse, proseHeadings, type ProseHeading } from './markdown.js';
+export {
+  renderToc,
+  type DocumentOutline,
+  type DocumentHeading,
+  type DocumentFigure,
+} from './outline.js';
 export { schemeMarkup, renderDocument, type RenderOptions } from './document.js';
 export {
   renderDocumentParts,
@@ -40,6 +46,15 @@ export {
   DEFAULT_THEME,
   type ThemeName,
 } from './themes.js';
+
+// Geometry report: what a grid diagram's layout could not avoid (W_GEOMETRY).
+export {
+  geometryReport,
+  GEOMETRY_TYPES,
+  type GeometryIssue,
+  type GeometryIssueKind,
+  type GeometryReport,
+} from './geometryReport.js';
 
 // Canonical node-kind lists (for editor dropdowns).
 export { KNOWN_NODE_KINDS } from './svg/blockStyle.js';

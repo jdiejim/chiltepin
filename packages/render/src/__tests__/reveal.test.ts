@@ -148,7 +148,7 @@ describe('spans reveal', () => {
   it('bars by start, across lanes; a connector arrives with its child', () => {
     // Bar groups are emitted per lane in data order: root, late, early.
     expect(steps(html, 'g[data-bl="spans"] > g')).toEqual([0, 2, 1]);
-    expect(steps(html, 'line.sp-link')).toEqual([2, 1]);
+    expect(steps(html, 'path.sp-link')).toEqual([2, 1]);
     expect(steps(html, '.sp-details li')).toEqual([1]);
     expect(distinct(html)).toEqual(range(3));
   });

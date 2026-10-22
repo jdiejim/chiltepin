@@ -102,7 +102,7 @@ describe('segmentLabel', () => {
 
   it('template bodies parse and label like any block', () => {
     expect(segmentLabel(seg('```callout\n' + templateBody('callout') + '\n```\n'))).toBe(
-      'Heads up',
+      'Replays past 48 hours bill twice',
     );
   });
 });

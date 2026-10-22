@@ -6,8 +6,8 @@
  */
 
 import {
+  lintDocument,
   parseDocument,
-  validateDocument,
   type Diagnostic,
   type Document,
 } from 'chiltepin-core';
@@ -40,13 +40,17 @@ interface CacheEntry {
 
 let cache: CacheEntry | null = null;
 
-/** Parses, validates, and renders `source`. Memoised on both inputs. */
+/**
+ * Parses, lints, and renders `source`. Memoised on both inputs. The lints are
+ * core's `lintDocument`, the same call `chiltepin check` makes, so the canvas
+ * and the CLI report the same findings for the same text.
+ */
 export function derive(source: string, slug: string): Derived {
   if (cache !== null && cache.source === source && cache.slug === slug) {
     return cache.value;
   }
   const doc = parseDocument(source, slug);
-  const diagnostics = validateDocument(doc, `${slug}.md`);
+  const diagnostics = lintDocument(doc, `${slug}.md`);
   let rendered: DocumentSegmentsResult | null = null;
   let renderError: string | null = null;
   try {

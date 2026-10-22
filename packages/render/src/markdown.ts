@@ -14,13 +14,26 @@ import { escapeHtml } from './escape.js';
  * - Link / image hrefs with `javascript:`, `data:`, or `vbscript:` schemes are
  *   rewritten to `#` (see {@link safeUrl}).
  *
- * Output is deterministic (no auto heading ids, no smartypants).
+ * Output is deterministic: no smartypants, and heading ids come only from the
+ * caller (`headingIds`, computed once per document by `parts.ts`).
  */
 
 import { Marked, type Tokens } from 'marked';
 import { safeUrl } from './sanitize.js';
 
 const marked = new Marked({ gfm: true, breaks: false });
+
+/**
+ * Ids for the `##` / `###` headings of the prose run being rendered, in
+ * order. Set by {@link renderProse} for one synchronous parse, then cleared;
+ * empty means "no ids" (slides, inline fields).
+ */
+let pendingIds: string[] = [];
+
+/** The `##` / `###` levels that take an anchor id (the doc outline). */
+function isOutlineDepth(depth: number): boolean {
+  return depth === 2 || depth === 3;
+}
 
 marked.use({
   tokenizer: {
@@ -40,12 +53,20 @@ marked.use({
       // author wrote provenance, so the page prints it under the heading, the
       // way the deck prints it in the slide footer.
       const raw = this.parser.parseInline(token.tokens);
-      if (token.depth > 2) return `<h${token.depth}>${raw}</h${token.depth}>\n`;
+      // An outline heading takes the next precomputed id and a `#` link that
+      // shows on hover (the glyph is CSS, so the heading's text stays clean).
+      const id = isOutlineDepth(token.depth) ? pendingIds.shift() : undefined;
+      const idAttr = id !== undefined ? ` id="${escapeHtml(id)}"` : '';
+      const anchor =
+        id !== undefined
+          ? `<a class="h-anchor" href="#${escapeHtml(id)}" aria-label="Link to this section"></a>`
+          : '';
+      if (token.depth > 2) return `<h${token.depth}${idAttr}>${raw}${anchor}</h${token.depth}>\n`;
       const text = stripHeadingMarkers(raw);
       const src = readSourceMarker(raw);
       const note =
         src !== undefined ? `<p class="src-note">Source: ${escapeHtml(src)}</p>\n` : '';
-      return `<h${token.depth}>${text}</h${token.depth}>\n${note}`;
+      return `<h${token.depth}${idAttr}>${text}${anchor}</h${token.depth}>\n${note}`;
     },
     link(token: Tokens.Link): string {
       const href = safeUrl(token.href);
@@ -65,11 +86,40 @@ marked.use({
  * Renders Markdown prose to an HTML string wrapped in `<div class="prose">`.
  *
  * @param text - The Markdown source.
+ * @param headingIds - Ids for the run's `##` / `###` headings, in order (see
+ *   {@link proseHeadings}); a heading past the end of the list gets no id.
  * @returns The HTML output, wrapped in a `prose` div for styling scope.
  */
-export function renderProse(text: string): string {
-  const html = marked.parse(text, { async: false });
-  return `<div class="prose">${html}</div>`;
+export function renderProse(text: string, headingIds: readonly string[] = []): string {
+  pendingIds = [...headingIds];
+  try {
+    const html = marked.parse(text, { async: false });
+    return `<div class="prose">${html}</div>`;
+  } finally {
+    pendingIds = [];
+  }
+}
+
+/** One `##` / `###` heading of a prose run, in source order. */
+export interface ProseHeading {
+  /** 2 for `##`, 3 for `###`. */
+  readonly depth: 2 | 3;
+  /** The heading's Markdown source text, with slide markers (`{split}`, `{source: …}`) removed. */
+  readonly text: string;
+}
+
+/**
+ * The outline headings of a prose run, in the order {@link renderProse}
+ * renders them — the same tokens, so the ids line up one to one.
+ */
+export function proseHeadings(text: string): ProseHeading[] {
+  const out: ProseHeading[] = [];
+  marked.walkTokens(marked.lexer(text), (token) => {
+    if (token.type !== 'heading') return;
+    const h = token as Tokens.Heading;
+    if (h.depth === 2 || h.depth === 3) out.push({ depth: h.depth, text: stripHeadingMarkers(h.text) });
+  });
+  return out;
 }
 
 /**

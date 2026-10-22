@@ -8,16 +8,11 @@
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
-import { ICONS } from './drivers.js';
+import { iconSvg } from '../svg/icons.js';
 
 type ListData = BlockDataMap['list'];
 type ListItem = ListData['items'][number];
 type Style = NonNullable<ListData['style']>;
-
-function iconSvg(name: string): string {
-  const paths = ICONS[name] ?? '<circle cx="12" cy="12" r="8"/>';
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-}
 
 /** Builds the per-item marker for a given style. */
 function marker(item: ListItem, style: Style, index: number): string {

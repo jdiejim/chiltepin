@@ -163,7 +163,7 @@ export async function runSingle(opts: {
       opts.format === 'slides' ? toSlides(doc, themeOpts) : renderDocument(doc, themeOpts),
     );
     await writeFile(outputAbs, html, 'utf8');
-    bytes = html.length;
+    bytes = Buffer.byteLength(html, 'utf8');
   }
 
   const doOpen = opts.preview === true && opts.open !== false;

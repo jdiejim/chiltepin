@@ -119,7 +119,9 @@ export function formatAudit(report: AuditReport, plain = false): string {
     }
   }
   lines.push('');
-  lines.push(`  ${dim('Next:')} run ${cyan('/chiltepin audit')} in Claude Code to generate the docs you pick.`);
+  lines.push(
+    `  ${dim('Next:')} run ${cyan('chiltepin audit --json')}, then ask your agent to write the docs you pick from it.`,
+  );
   if (report.notice !== undefined) lines.push(`  ${dim(`note: ${report.notice}`)}`);
   lines.push('');
   return lines.join('\n');

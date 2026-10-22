@@ -44,6 +44,9 @@ export {
   type SwimlaneStepInput,
   type SwimlaneLaneInput,
   type SwimlaneLinkInput,
+  resolveSwimlanePhase,
+  type SwimlanePhaseInput,
+  type SwimlaneBand,
 } from './blocks/swimlaneLayout.js';
 
 export {
@@ -81,6 +84,8 @@ export {
 } from './diagnostics.js';
 
 export { levenshtein, closest } from './suggest.js';
+export { headingSlug, headingIds } from './slug.js';
+export { ICON_NAMES, isIconName, type IconName } from './icons.js';
 export { splitMarkdown, type RawSegment } from './splitter.js';
 export { parseBlockBody, locateYamlPath, type YamlParseResult, type YamlLocation } from './yaml.js';
 export { parseDocument } from './parser.js';
@@ -119,11 +124,33 @@ export {
 export { type ProseContext, type ProseUnit, collectProseUnits } from './prose/surfaces.js';
 
 export { lintDensity, DENSITY_BUDGETS, type DensityBudget } from './density.js';
+export {
+  lintGenericLabels,
+  isGenericLabel,
+  isPlaceholderGroupLabel,
+  GENERIC_LABEL_FIELDS,
+} from './genericLabels.js';
+export { lintGraphs } from './graphLints.js';
+export { lintTemplateEcho } from './templateEcho.js';
+export { lintDocument } from './lintDocument.js';
+export {
+  proseLinks,
+  markdownHeadings,
+  docHeadings,
+  docAnchors,
+  blockIds,
+  resolveLinkTarget,
+  lintLocalLinks,
+  type ProseLink,
+  type LinkTarget,
+  type MarkdownHeading,
+} from './links.js';
 
 export {
   blockSchemas,
   type BlockDataMap,
   metaSchema,
+  META_STATUSES,
   calloutSchema,
   tableSchema,
   sequenceSchema,

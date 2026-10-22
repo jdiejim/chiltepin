@@ -2,9 +2,12 @@
  * Renders a `typescale` block — a live type specimen. One hairline-separated
  * row per item: a fixed meta column (name, `NNpx / weight NNN` in mono, an
  * optional note) and the sample text rendered LIVE at the item's size, weight,
- * line-height, and font family. The rendered size clamps to 10-64px so giant
- * display sizes stay in the row (the label keeps the true size); rows are
- * overflow-hidden with an ellipsis so nothing wraps ugly.
+ * line-height, and font family.
+ *
+ * A specimen draws at its true size: the sample wraps rather than clipping,
+ * and on a phone the meta column stacks above it. Past {@link MAX_SPECIMEN}
+ * the sample draws at that size and the spec line says so ("shown at 96px"),
+ * so the page never shows a size it does not name.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -24,6 +27,9 @@ const FONT_CLASS: Record<'display' | 'body' | 'mono', string> = {
   mono: 'ts-f-mono',
 };
 
+/** The largest size a specimen draws at; a larger style says it is scaled. */
+export const MAX_SPECIMEN = 96;
+
 /** Formats a number for CSS / labels, trimming float noise. */
 function fmt(v: number): string {
   return String(Math.round(v * 100) / 100);
@@ -32,7 +38,8 @@ function fmt(v: number): string {
 function renderRow(item: TypescaleItem, sample: string, i: number): string {
   const weight = item.weight ?? 400;
   const lineHeight = item.lineHeight ?? 1.3;
-  const rendered = Math.min(64, Math.max(10, item.size));
+  const rendered = Math.min(MAX_SPECIMEN, Math.max(1, item.size));
+  const scaled = rendered !== item.size ? ` · shown at ${fmt(rendered)}px` : '';
   const fontClass =
     (FONT_CLASS as Partial<Record<string, string>>)[item.font ?? 'body'] ?? FONT_CLASS.body;
   const note =
@@ -44,7 +51,7 @@ function renderRow(item: TypescaleItem, sample: string, i: number): string {
     `<div class="ts-row"${bp(`items.${i}`)}>` +
     `<div class="ts-meta">` +
     `<div class="ts-name"${bp(`items.${i}.name`)}>${escapeHtml(item.name)}</div>` +
-    `<div class="ts-spec">${escapeHtml(`${fmt(item.size)}px / weight ${fmt(weight)}`)}</div>` +
+    `<div class="ts-spec">${escapeHtml(`${fmt(item.size)}px / weight ${fmt(weight)}${scaled}`)}</div>` +
     note +
     `</div>` +
     `<div class="ts-sample ${fontClass}" style="${style}"${bp('sample')}>${escapeHtml(sample)}</div>` +

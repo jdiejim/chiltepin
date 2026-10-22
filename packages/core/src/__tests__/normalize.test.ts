@@ -111,6 +111,17 @@ describe('edge sugar (flow / graph / block — covers dag and the block presets)
     expect(diagsFor(bad).some((d) => d.code === 'E_SCHEMA')).toBe(true);
   });
 
+  it('a whole line quoted for YAML keeps no quote marks in its label', () => {
+    const d = dataOf(
+      "```flow\nnodes:\n  - { id: ok, kind: decision, label: Valid? }\n  - a: Go\n  - b: Stop\nedges:\n  - 'ok -> a: \"yes\"'\n  - \"ok -x-> b: 'no'\"\n  - 'a -> b: \"half'\n```\n",
+    );
+    expect(d.edges).toEqual([
+      { from: 'ok', to: 'a', label: 'yes' },
+      { from: 'ok', to: 'b', label: 'no', kind: 'error' },
+      { from: 'a', to: 'b', label: '"half' },
+    ]);
+  });
+
   it('node ids containing dashes still parse', () => {
     const d = dataOf('```flow\nedges:\n  - "order-item -> order-total"\n```\n');
     expect(d.edges).toEqual([{ from: 'order-item', to: 'order-total' }]);

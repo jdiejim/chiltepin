@@ -91,6 +91,17 @@ function nameList(names: Iterable<string>): string {
 }
 
 // ─── meta ───────────────────────────────────────────────────────────────────
+/** The document statuses the cover can show, in lifecycle order. */
+export const META_STATUSES = [
+  'draft',
+  'proposal',
+  'review',
+  'accepted',
+  'superseded',
+  'deprecated',
+  'example',
+] as const;
+
 export const metaSchema = z
   .object({
     title: z.string().optional(),
@@ -99,6 +110,14 @@ export const metaSchema = z
     // Optional brand logo shown in the document/slide cover. A URL or path
     // (use an absolute https URL so it resolves wherever the doc is rendered).
     logo: z.string().optional(),
+    // The cover's meta row: where the doc stands, who owns and reviews it,
+    // when it last changed, and which version it is.
+    status: z.enum(META_STATUSES).optional(),
+    owners: z.array(z.string()).optional(),
+    reviewers: z.array(z.string()).optional(),
+    updated: z.string().optional(),
+    // YAML reads `version: 1.2` as a number; the cover prints it as written.
+    version: z.union([z.string(), num]).optional(),
   })
   .strict();
 
@@ -473,12 +492,17 @@ export const cvtSchema = z
   .strict();
 
 // ─── stats (KPI cards) ──────────────────────────────────────────────────────
+// The delta's arrow comes from its sign; `trend` is the arrow for a delta
+// with no sign. `better` names the good direction (`down` for latency, cost,
+// errors): a delta that moves that way reads as good, the other way as bad.
+// Without `better` the delta stays neutral.
 const statSchema = z
   .object({
     value: z.union([z.string(), num]),
     label: z.string(),
     delta: z.string().optional(),
     trend: z.enum(['up', 'down', 'flat']).optional(),
+    better: z.enum(['up', 'down']).optional(),
     accent: z.string().optional(),
   })
   .strict();
@@ -602,6 +626,12 @@ export const pyramidSchema = z
 // Groups anchor by explicit grid coordinates, so `col`/`row` are required.
 // `parent` nests one group inside another by `id` (region → zone → subnet);
 // the child's cells must lie inside the parent's range (`W_GROUP_NESTING`).
+//
+// `color` names one of the renderer's category hues. The renderer owns the
+// palette, so the field carries the vocabulary as a note (`chiltepin block`
+// prints it); a hex still validates for older documents.
+const PANEL_COLOR_NOTE =
+  'a hue: blue|green|amber|violet|teal|rose. Omit it and the renderer picks one: the hue most nodes inside share, else the next free hue, so neighbours differ. A hex still works.';
 const gridGroupSchema = z
   .object({
     id: z.string().optional(),
@@ -611,7 +641,7 @@ const gridGroupSchema = z
     cols: gridSpan.optional(),
     rows: gridSpan.optional(),
     label: z.string(),
-    color: z.string().optional(),
+    color: z.string().optional().describe(PANEL_COLOR_NOTE),
   })
   .strict();
 
@@ -632,7 +662,12 @@ const flowNodeSchema = z
     row: gridCoord.optional(),
     w: gridSpan.optional(),
     label: z.string(),
-    kind: z.enum(['start', 'end', 'decision', 'process', 'agent', 'llm', 'tool', 'human', 'memory']).optional(),
+    kind: z
+      .enum(['start', 'end', 'decision', 'process', 'agent', 'llm', 'tool', 'human', 'memory', 'guard', 'eval'])
+      .optional()
+      .describe(
+        'the AI kit — agent · llm · tool · memory · human (dashed gate) · guard (policy check) · eval (scores the output) — draws its own chip and family hue; agent, llm, guard and eval draw as the agent card, with the second label line as the model chip.',
+      ),
   })
   .strict();
 const flowEdgeSchema = z
@@ -833,6 +868,8 @@ const swimlaneStepSchema = z
     kind: z.enum(['action', 'decision', 'start', 'end', 'wait']).optional(),
     note: z.string().optional(),
     accent: z.boolean().optional(),
+    /** The phase band (by `label`) this step belongs to; derived columns then keep it under that band. */
+    phase: z.string().optional(),
   })
   .strict();
 const swimlaneLinkSchema = z
@@ -871,9 +908,14 @@ const c4NodeSchema = z
     row: gridCoord.optional(),
     w: gridSpan.optional(),
     kind: z.enum(['person', 'system', 'external', 'store', 'container', 'component']),
-    family: z.string().optional(),
+    family: z
+      .string()
+      .optional()
+      .describe(
+        'the category. It sets the shape and the hue: web|browser|spa draws a browser window, mobile a phone, queue|topic|stream a pipe, db|cache|bucket a cylinder. client draws a browser, or a phone when the name or tech says mobile. external draws the neutral style of an element outside the scope. Another block kind word (gateway, agent) gives that kind\'s hue.',
+      ),
     name: z.string(),
-    tech: z.string().optional(),
+    tech: z.string().optional().describe('the technology; the type line reads `[Container: tech]`.'),
     desc: z.string().optional(),
   })
   .strict();
@@ -882,8 +924,13 @@ const c4EdgeSchema = z
     from: z.string(),
     to: z.string(),
     label: z.string().optional(),
-    tech: z.string().optional(),
+    tech: z.string().optional().describe('the protocol; drawn as `[tech]` on its own line under the label.'),
     kind: z.enum(['solid', 'dashed', 'forbidden', 'error']).optional(),
+    step: num
+      .int('a step is a whole number')
+      .min(1, 'steps start at 1')
+      .optional()
+      .describe('the order of this call in one scenario (1, 2, 3…): a numbered relationship makes the diagram a dynamic view.'),
   })
   .strict();
 const c4BoundarySchema = z.object({ label: z.string() }).strict();
@@ -901,10 +948,13 @@ export const c4Schema = z
     title: z.string().optional(),
     description: z.string().optional(),
     lede: z.string().optional(),
-    level: z.enum(['context', 'container', 'component']).optional(),
+    level: z
+      .enum(['context', 'container', 'component'])
+      .optional()
+      .describe('omit it and the deepest kind sets it; it names the diagram and the type of the boundary.'),
     boundary: c4BoundarySchema.optional(),
     boundaries: z.array(c4NamedBoundarySchema).optional(),
-    dir: gridDirSchema,
+    dir: gridDirSchema.describe('auto-layout puts the people on top (TB); LR turns the diagram on its side.'),
     groups: z.array(gridGroupSchema).optional(),
     nodes: z.array(c4NodeSchema).optional(),
     edges: z.array(c4EdgeSchema).optional(),
@@ -1030,8 +1080,13 @@ export const clusterSchema = z
 // `infra` / `event` / `ddd` / `network` types are permanent aliases that set it.
 // Groups use the shared `gridGroupSchema` (same shape on flow/dfd/state/c4).
 const blockGraphLayerSchema = z
-  .object({ label: z.string(), color: z.string().optional() })
+  .object({ label: z.string(), color: z.string().optional().describe(PANEL_COLOR_NOTE) })
   .strict();
+// The node `kind` stays a free string — an unknown word draws a neutral card
+// with the word as its chip — but the renderer's vocabulary travels with the
+// schema so `chiltepin block block` lists it.
+const BLOCK_KIND_NOTE =
+  'picks the shape, chip, glyph and family hue. Families: compute (service, worker, function, host, pod) blue · network and security (gateway, lb, cdn, dns, waf, auth) green · state (db, cache, bucket, warehouse, search, secrets, config) amber · messaging (queue, topic, stream, webhook, email) teal · AI violet · people (client, user, browser, mobile) rose · external neutral. AI kit: agent, llm (model), tool, memory, vector (embeddings), human (reviewer), guard (guardrail, policy), eval (judge, grader), prompt. agent and llm draw `tech` as the model chip. Silhouettes: db a cylinder, replica and shards a set of cylinders, cache a memory card, queue / topic / stream a pipe, cdn and external a cloud, lb and gateway a bar, function a circle; only `replicas` draws a stack of cards. Any other word draws a neutral card with the word as its chip.';
 const blockGraphNodeSchema = z
   .object({
     id: z.string(),
@@ -1042,19 +1097,32 @@ const blockGraphNodeSchema = z
     // Row span. A gateway or load balancer drawn as a vertical bar spans the
     // rows of the services it fronts; omitted, the renderer spans the fan-out.
     h: gridSpan.optional(),
-    kind: z.string().optional(),
+    kind: z.string().optional().describe(BLOCK_KIND_NOTE),
     name: z.string(),
     tech: z.string().optional(),
     // Instance count. From 2 up the node draws as a stacked card with a `×N` chip.
     replicas: num.int().min(1).optional(),
   })
   .strict();
+// A request narrated step by step: `step` draws a circled numeral on the edge
+// (beside its label), so the prose can say "in step 3 the API reads the cache".
+const BLOCK_STEP_NOTE =
+  'the request step this edge carries, drawn as a circled numeral beside the label. Number the steps of one request 1, 2, 3 in order; the prose then walks them by number. Terse form: `3. api -> cache: read`.';
+const BLOCK_PATH_NOTE =
+  'names the request path this edge belongs to (`read`, `write`). Edges that share a name draw in one hue, numerals included, and the legend names each path. Use it only when two requests share the diagram. Error edges stay red.';
 const blockGraphEdgeSchema = z
   .object({
     from: z.string(),
     to: z.string(),
     label: z.string().optional(),
     kind: z.enum(['solid', 'dashed', 'forbidden', 'error']).optional(),
+    step: num
+      .int('a step is a whole number')
+      .min(1, 'steps count from 1')
+      .max(99, 'steps stop at 99 — split the request into two diagrams')
+      .optional()
+      .describe(BLOCK_STEP_NOTE),
+    path: z.string().min(1).optional().describe(BLOCK_PATH_NOTE),
   })
   .strict();
 export const blockGraphSchema = z
@@ -1510,7 +1578,7 @@ export const gallerySchema = z
   });
 
 // ─── chart (declarative data chart) ─────────────────────────────────────────
-// `labels` + `series` drive bar / stacked / line / area / scatter; `items`
+// `labels` + `series` drive bar / stacked / line / area / scatter / dumbbell; `items`
 // drives donut, radar,
 // gauge (radial progress against `max` — one big dial, or several as
 // concentric rings), waterfall (a budget cascade — `budget` draws the dashed
@@ -1594,7 +1662,7 @@ export const chartSchema = z
     description: z.string().optional(),
     lede: z.string().optional(),
     kind: z
-      .enum(['bar', 'stacked', 'line', 'area', 'scatter', 'donut', 'pie', 'gauge', 'radar', 'waterfall', 'funnel', 'histogram', 'bell', 'boxplot', 'pareto', 'bullet'])
+      .enum(['bar', 'stacked', 'line', 'area', 'scatter', 'donut', 'pie', 'gauge', 'radar', 'waterfall', 'funnel', 'histogram', 'bell', 'boxplot', 'pareto', 'bullet', 'dumbbell'])
       .optional(),
     labels: z.array(z.string()).optional(),
     series: z.array(chartSeriesSchema).optional(),
@@ -1612,6 +1680,12 @@ export const chartSchema = z
     unit: z.string().optional(),
     budget: num.optional(),
     max: num.optional(),
+    // `kind: dumbbell` draws one row per label, a dot per series on one value
+    // axis. `min` is that axis's floor (a 1–5 scale); without it the floor
+    // comes from the data.
+    min: num
+      .optional()
+      .describe('The value-axis floor of `kind: dumbbell`. With `max`, it fixes the scale (for example 1–5).'),
     // `kind: histogram` and `kind: bell` take raw `values`; the renderer bins
     // them (`bins`, default Sturges) or fits mean / sd. `bell` may instead be
     // given `mean` + `sd` directly; `markers` label points on the curve.
@@ -3292,13 +3366,22 @@ export const percentilesSchema = z
 // ─── usecase (UML use-case diagram) ─────────────────────────────────────────
 // Actors outside the system boundary, use cases (ovals) inside it. `links`
 // join actors to cases; `relations` join cases to cases with `include`,
-// `extend`, or `generalize`. Terse: `actor -> case` and `a ..> b: include`.
+// `extend`, or `generalize` (and two actors with `generalize`). `focus` names
+// the one case the doc is about. Terse: `actor -> case`.
 const usecaseActorSchema = z
   .object({
     id: z.string(),
     name: z.string(),
-    kind: z.enum(['person', 'system', 'time']).optional(),
-    side: z.enum(['left', 'right']).optional(),
+    kind: z
+      .enum(['person', 'system', 'time'])
+      .optional()
+      .describe('omit it and a name that ends in system, service, gateway, server, api, database, platform, engine or bot draws as a system box.'),
+    side: z
+      .enum(['left', 'right'])
+      .optional()
+      .describe(
+        'left = primary (starts a case), right = supporting. Omit it: an actor that joins only included or extending cases, or a system that helps another actor, stands right.',
+      ),
   })
   .strict();
 const usecaseCaseSchema = z
@@ -3319,7 +3402,11 @@ const usecaseRelSchema = z
   .object({
     from: z.string(),
     to: z.string(),
-    kind: z.enum(['include', 'extend', 'generalize']),
+    kind: z
+      .enum(['include', 'extend', 'generalize'])
+      .describe(
+        'the arrow runs from → to. include: base → included case. extend: extension → base (`label` = its condition). generalize: special → general, for two cases or two actors.',
+      ),
     label: z.string().optional(),
   })
   .strict();
@@ -3328,12 +3415,51 @@ export const usecaseSchema = z
     title: z.string().optional(),
     description: z.string().optional(),
     system: z.string().optional(),
+    focus: z.string().optional().describe('the id of the one case the doc is about; it takes the accent.'),
     actors: z.array(usecaseActorSchema).min(1),
     cases: z.array(usecaseCaseSchema).min(1),
     links: z.array(usecaseLinkSchema).optional(),
     relations: z.array(usecaseRelSchema).optional(),
   })
-  .strict();
+  .strict()
+  // In-block references: the renderer drops a link or relation whose end
+  // names nothing, so a typo silently deletes a line from the diagram.
+  .superRefine((val, ctx) => {
+    const actorIds = new Set(val.actors.map((a) => a.id));
+    const caseIds = new Set(val.cases.map((c) => c.id));
+    (val.links ?? []).forEach((l, i) => {
+      // An association joins an actor and a case, in either order.
+      if ((actorIds.has(l.from) && caseIds.has(l.to)) || (caseIds.has(l.from) && actorIds.has(l.to))) return;
+      for (const end of ['from', 'to'] as const) {
+        if (actorIds.has(l[end]) || caseIds.has(l[end])) continue;
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['links', i, end],
+          message: `link ${end} "${l[end]}" is not an actor or case id — actors: ${nameList(actorIds)}; cases: ${nameList(caseIds)}`,
+        });
+      }
+    });
+    (val.relations ?? []).forEach((r, i) => {
+      if (caseIds.has(r.from) && caseIds.has(r.to)) return;
+      if (r.kind === 'generalize' && actorIds.has(r.from) && actorIds.has(r.to)) return;
+      const ids = r.kind === 'generalize' && actorIds.has(r.from) ? actorIds : caseIds;
+      for (const end of ['from', 'to'] as const) {
+        if (ids.has(r[end])) continue;
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['relations', i, end],
+          message: `relation ${end} "${r[end]}" is not a ${ids === actorIds ? 'actor' : 'case'} id — use one of: ${nameList(ids)}`,
+        });
+      }
+    });
+    if (val.focus !== undefined && !caseIds.has(val.focus)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['focus'],
+        message: `focus "${val.focus}" is not a case id — use one of: ${nameList(caseIds)}`,
+      });
+    }
+  });
 
 // ─── pkg (UML package diagram) ──────────────────────────────────────────────
 // Packages as tabbed folders on a grid, optionally nested by `parent`;
@@ -3449,7 +3575,8 @@ export const threatmodelSchema = z
     title: z.string().optional(),
     description: z.string().optional(),
     dir: gridDirSchema,
-    boundaries: z.array(gridGroupSchema).optional(),
+    // A trust boundary always draws in `negative`; its `color` carries no hue note.
+    boundaries: z.array(gridGroupSchema.extend({ color: z.string().optional() })).optional(),
     nodes: z.array(threatNodeSchema).min(1),
     edges: z.array(threatEdgeSchema).optional(),
     threats: z.array(threatSchema).optional(),

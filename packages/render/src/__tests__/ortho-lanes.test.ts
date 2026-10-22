@@ -1,21 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { edgeLanes, entryPortOffsets, ortho } from '../svg/ortho.js';
+import { ortho } from '../svg/ortho.js';
 import { renderDfd } from '../blocks/dfd.js';
 
-describe('bidirectional edge lanes', () => {
-  it('edgeLanes: opposite pairs get opposite lanes; unpaired and self-loops stay centered', () => {
-    const lanes = edgeLanes([
-      { from: 'a', to: 'b' },
-      { from: 'b', to: 'a' },
-      { from: 'b', to: 'c' },
-      { from: 'd', to: 'd' },
-    ]);
-    expect(lanes[0]).toBe(-1);
-    expect(lanes[1]).toBe(1);
-    expect(lanes[2]).toBe(0);
-    expect(lanes[3]).toBe(0);
-  });
+/** The `d` of every arrow path in the svg. */
+const arrows = (html: string): string[] =>
+  [...html.matchAll(/<path d="([^"]+)" fill="none"[^>]*marker-end/g)].map((m) => m[1] ?? '');
 
+/** The last point of a path `d` (`… L x y`). */
+const endOf = (d: string): string => /(-?\d+) (-?\d+)$/.exec(d)?.slice(1).join(',') ?? '';
+
+describe('ortho (the public single-edge helper)', () => {
   it('lane 0 is byte-identical to the pre-lane route', () => {
     const A = { x: 0, y: 0, w: 100, h: 50 };
     const B = { x: 200, y: 0, w: 100, h: 50 };
@@ -33,34 +27,9 @@ describe('bidirectional edge lanes', () => {
     // 10px per lane → label midpoints sit 20px apart, clear of each other.
     expect(Math.abs(ab.ly - ba.ly)).toBe(20);
   });
+});
 
-  it('fan-in: two edges into one node side get distinct centered offsets, ordered by source id', () => {
-    const boxes = new Map([
-      ['a', { x: 0, y: 0, w: 100, h: 50 }],
-      ['c', { x: 0, y: 200, w: 100, h: 50 }],
-      ['b', { x: 200, y: 100, w: 100, h: 50 }],
-      ['x', { x: 400, y: 0, w: 100, h: 50 }],
-      ['y', { x: 600, y: 0, w: 100, h: 50 }],
-    ]);
-    const offs = entryPortOffsets(
-      [
-        { from: 'c', to: 'b' },
-        { from: 'a', to: 'b' },
-        { from: 'x', to: 'y' },
-      ],
-      (id) => boxes.get(id),
-    );
-    // Both edges enter b's left side; spread ±4 (8px apart), 'a' before 'c'.
-    expect(offs[1]).toBe(-4);
-    expect(offs[0]).toBe(4);
-    // The single-entry edge keeps offset 0 — its route stays byte-identical.
-    expect(offs[2]).toBe(0);
-    const A = boxes.get('x');
-    const B = boxes.get('y');
-    if (A === undefined || B === undefined) throw new Error('unreachable');
-    expect(ortho(A, B, 0, offs[2] ?? 0).d).toBe(ortho(A, B).d);
-  });
-
+describe('grid renderers spread shared sides (the router)', () => {
   it('a dfd with two edges into one node draws two arrowheads at distinct entry points', () => {
     const fanIn = renderDfd({
       nodes: [
@@ -76,15 +45,11 @@ describe('bidirectional edge lanes', () => {
         { from: 'd', to: 'e' },
       ],
     });
-    const arrows = [...fanIn.matchAll(/<path d="([^"]+)" fill="none"[^>]*marker-end/g)].map(
-      (m) => m[1] ?? '',
-    );
-    expect(arrows.length).toBe(3);
-    // Horizontal routes end `… V <entryY> H <entryX>` — the entry y differs.
-    const endY = (d: string): string => /V (-?[\d.]+) H (-?[\d.]+)$/.exec(d)?.[1] ?? '';
-    expect(endY(arrows[0] ?? '')).not.toBe('');
-    expect(endY(arrows[0] ?? '')).not.toBe(endY(arrows[1] ?? ''));
-    // The lone d→e edge is untouched: same route as in a fan-in-free render.
+    const ds = arrows(fanIn);
+    expect(ds.length).toBe(3);
+    expect(endOf(ds[0] ?? '')).not.toBe('');
+    expect(endOf(ds[0] ?? '')).not.toBe(endOf(ds[1] ?? ''));
+    // The lone d→e edge is a straight line, the same as in a fan-in-free render.
     const solo = renderDfd({
       nodes: [
         { id: 'd', col: 3, row: 1, kind: 'process', name: 'D' },
@@ -92,8 +57,8 @@ describe('bidirectional edge lanes', () => {
       ],
       edges: [{ from: 'd', to: 'e' }],
     });
-    const soloArrow = /<path d="([^"]+)" fill="none"[^>]*marker-end/.exec(solo)?.[1];
-    expect(arrows[2]).toBe(soloArrow);
+    expect(ds[2]).toBe(arrows(solo)[0]);
+    expect(ds[2]).toMatch(/^M \d+ \d+ L \d+ \d+$/);
   });
 
   it('a dfd with A→B and B→A emits two different edge paths', () => {
@@ -107,7 +72,7 @@ describe('bidirectional edge lanes', () => {
         { from: 'b', to: 'a', label: 'pull' },
       ],
     });
-    const ds = [...html.matchAll(/<path d="([^"]+)" fill="none"/g)].map((m) => m[1]);
+    const ds = arrows(html);
     expect(ds.length).toBe(2);
     expect(ds[0]).not.toBe(ds[1]);
   });

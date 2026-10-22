@@ -13,13 +13,19 @@
  * folder) is never touched, and an output directory with no manifest is left
  * entirely alone.
  *
- * Diagnostics are returned for the CLI to print. Schema and reference findings
- * are **warnings** — `chiltepin check` remains the CI gate. A renderer that throws is
- * an `E_RENDER` error: that document gets a placeholder page, the rest of the
- * build finishes, and the exit code is 1.
+ * Besides the pages it writes `search.json`, the shared stylesheet and script
+ * (`assets/chiltepin.css`, `assets/chiltepin.js`, linked from every page), and
+ * a copy of every local image a page shows (`meta.logo` included), so the
+ * site works from any folder or host. All of them are in the manifest.
+ *
+ * Diagnostics are returned for the CLI to print, each at its own level.
+ * Schema and reference errors do not fail the build — `chiltepin check`
+ * remains the CI gate. A renderer that throws is an `E_RENDER` error: that
+ * document gets a placeholder page, the rest of the build finishes, and the
+ * exit code is 1.
  */
 
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { parseDocument, type Diagnostic } from 'chiltepin-core';
 import { loadConfig } from '../io/config.js';
@@ -57,6 +63,10 @@ interface BuildResult {
   readonly pruneDeferred: boolean;
   /** Schema, ref, encoding, and render diagnostics. */
   readonly diagnostics: readonly Diagnostic[];
+  /** Local images a page links to that do not exist (project-relative). */
+  readonly missingAssets: readonly string[];
+  /** Images copied next to the pages (output-relative). */
+  readonly assets: readonly string[];
   /** 0, or 1 when a document failed to render. */
   readonly exitCode: number;
 }
@@ -74,7 +84,11 @@ export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
       doc: parseDocument(f.source, f.slug),
     }));
 
-  const site = buildSite(docs, { richIndex: opts.richIndex ?? config.richIndex, colorScheme: config.colorScheme });
+  const site = buildSite(docs, {
+    richIndex: opts.richIndex ?? config.richIndex,
+    colorScheme: config.colorScheme,
+    sharedAssets: true,
+  });
   const diagnostics: Diagnostic[] = [...encodingDiagnostics(files), ...site.diagnostics];
 
   // Read the previous manifest before writing, so a page this build also
@@ -86,10 +100,32 @@ export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
     const abs = join(outDir, page.path);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, page.html, 'utf8');
-    pages.push({ path: page.path, bytes: page.html.length });
+    pages.push({ path: page.path, bytes: Buffer.byteLength(page.html, 'utf8') });
+  }
+  // The search index and the shared stylesheet and script.
+  for (const file of site.files) {
+    const abs = join(outDir, file.path);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, file.content, 'utf8');
+  }
+  // Local images next to the pages that show them. A missing image is
+  // reported, not fatal: the page still builds, and its `<img>` shows the
+  // alt text.
+  const copied: string[] = [];
+  const missing: string[] = [];
+  for (const asset of site.assets) {
+    const from = resolve(opts.cwd, asset.from);
+    const to = join(outDir, asset.to);
+    try {
+      await mkdir(dirname(to), { recursive: true });
+      await copyFile(from, to);
+      copied.push(asset.to);
+    } catch {
+      missing.push(asset.from);
+    }
   }
 
-  const generated = site.pages.map((p) => p.path);
+  const generated = [...site.pages.map((p) => p.path), ...site.files.map((f) => f.path), ...copied];
   const removed =
     previous === undefined ? [] : await pruneStale(outDir, previous.files, new Set(generated));
   await writeManifest(outDir, generated, `chiltepin ${cliVersion()}`);
@@ -101,6 +137,8 @@ export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
     removed,
     pruneDeferred: previous === undefined && (await hadContent(outDir, generated)),
     diagnostics,
+    missingAssets: missing,
+    assets: copied,
     exitCode: diagnostics.some((d) => d.code === 'E_RENDER') ? 1 : 0,
   };
 }

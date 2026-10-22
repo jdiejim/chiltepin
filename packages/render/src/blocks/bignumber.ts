@@ -14,6 +14,19 @@ import { bp } from '../paths.js';
 
 const TREND_GLYPH = { up: '▲', down: '▼', flat: '—' } as const;
 
+/**
+ * The size step for a value: a long figure (`$1,250,000,000`) steps down so
+ * it fits the column on a phone instead of clipping. Counted in characters,
+ * since the display face is close to fixed width for digits.
+ */
+export function bignumberSize(value: string): '' | ' bn-len-m' | ' bn-len-l' | ' bn-len-xl' {
+  const n = [...value.trim()].length;
+  if (n <= 6) return '';
+  if (n <= 10) return ' bn-len-m';
+  if (n <= 15) return ' bn-len-l';
+  return ' bn-len-xl';
+}
+
 export function renderBignumber(data: BlockDataMap['bignumber']): string {
   const accentCls = data.accent !== undefined ? ` bn-${data.accent}` : '';
   const arrow =
@@ -29,7 +42,7 @@ export function renderBignumber(data: BlockDataMap['bignumber']): string {
       ? `<p class="bn-context"${bp('context')}>${escapeHtml(data.context)}</p>`
       : '';
   return (
-    `<div class="bn${accentCls}">` +
+    `<div class="bn${accentCls}${bignumberSize(String(data.value))}">` +
     `<div class="bn-value-row"><span class="bn-value"${bp('value')}>${escapeHtml(data.value)}</span>${delta}</div>` +
     `<div class="bn-label"${bp('label')}>${escapeHtml(data.label)}</div>` +
     context +

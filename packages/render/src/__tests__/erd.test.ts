@@ -87,9 +87,11 @@ describe('erd renderer', () => {
   });
 
   it('routes every relation with letters at both ends; non-identifying dashed; label on a mask', () => {
-    const rels = root.querySelectorAll('[data-bp^="relations."]');
+    // The relation groups (each label twins with its route and sits outside).
+    const rels = root.querySelectorAll('g[data-bl="relations"] > [data-bp^="relations."]');
     expect(rels.length).toBe(6);
-    for (const r of rels) expect(r.querySelectorAll('.er-card').length).toBe(2);
+    // A letter at each end; ends fanned out of one anchor share one letter.
+    for (const r of rels) expect(r.querySelectorAll('.er-card').length).toBeGreaterThanOrEqual(1);
     const letters = root.querySelectorAll('.er-card').map((n) => n.text);
     expect(letters).toContain('1');
     expect(letters).toContain('N');

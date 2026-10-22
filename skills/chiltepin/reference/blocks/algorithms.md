@@ -1,8 +1,8 @@
 # Chiltepin blocks — Algorithms & data structures
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Structure & emphasis — one data structure frozen at one step
 (`array`, `linkedlist`, `bintree`, `hashmap`). One step per block; freeze a

@@ -418,8 +418,8 @@ groups:
 nodes:
   - { id: cdn, col: 1, row: 1, kind: cdn, name: CDN, tech: edge cache }
   - { id: gw, col: 2, row: 1, kind: gateway, name: API Gateway, tech: load balancer }
-  - { id: svc, col: 3, row: 1, kind: compute, name: API, tech: containers }
-  - { id: db, col: 4, row: 1, kind: db, name: Database, tech: managed SQL }
+  - { id: svc, col: 3, row: 1, kind: compute, name: Storefront API, tech: containers }
+  - { id: db, col: 4, row: 1, kind: db, name: orders-db, tech: managed SQL }
   - { id: bucket, col: 4, row: 2, kind: bucket, name: Object storage, tech: blobs / files }
   - { id: cache, col: 3, row: 2, kind: cache, name: Cache, tech: in-memory }
   - { id: q, col: 2, row: 2, kind: queue, name: Queue, tech: messages }
@@ -483,7 +483,7 @@ nodes:
   - { id: waf, col: 1, row: 2, kind: firewall, name: Firewall, tech: WAF }
   - { id: web, col: 2, row: 1, kind: compute, name: App servers, tech: private }
   - { id: cache, col: 2, row: 2, kind: cache, name: Cache, tech: private }
-  - { id: db, col: 3, row: 1, kind: db, name: Database, tech: restricted }
+  - { id: db, col: 3, row: 1, kind: db, name: customers-db, tech: restricted }
 edges:
   - lb -> waf: filter
   - waf -> web: "443"
@@ -1248,6 +1248,18 @@ bullets:
   - { label: Test coverage, value: 72, target: 80, ranges: [50, 70, 100] }
   - { label: Cache hit rate, value: 91, target: 85, ranges: [60, 80, 100] }
   - { label: Error budget used, value: 64, target: 50, ranges: [50, 80, 100], accent: red }
+```
+
+```chart
+title: Judge scores per dimension, old skill against new skill
+description: "Two values per row on the 1–5 judge scale. The grey dot is the old skill, the accent dot is the new skill, and the change prints at the right."
+kind: dumbbell
+min: 1
+max: 5
+labels: [Opening, Ending, Structure fit, Substance, Fidelity, Diagram clarity]
+series:
+  - { label: Old skill, values: [3.5, 1.3, 3.6, 3.4, 3.7, 2.8] }
+  - { label: New skill, values: [5.0, 4.6, 4.7, 4.3, 4.6, 3.6] }
 ```
 
 ```sankey
@@ -2135,8 +2147,8 @@ items:
 title: "The old infra tag — now block (preset: infra)"
 nodes:
   - { id: cdn, col: 1, row: 1, kind: cdn, name: CDN }
-  - { id: api, col: 2, row: 1, kind: compute, name: API }
-  - { id: db, col: 3, row: 1, kind: db, name: Database }
+  - { id: api, col: 2, row: 1, kind: compute, name: Storefront API }
+  - { id: db, col: 3, row: 1, kind: db, name: orders-db }
 edges:
   - cdn -> api
   - api -> db

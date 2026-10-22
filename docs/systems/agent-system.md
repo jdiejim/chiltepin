@@ -2,6 +2,7 @@
 title: Support triage agent
 subtitle: How the ticket-triage agent works — loop, prompts, budget, and evals.
 tag: Agent system · v1
+status: example
 ```
 
 ## Requirements

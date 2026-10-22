@@ -1,8 +1,8 @@
 # Chiltepin blocks — Architecture
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Containment — boundaries and what lives inside them (`c4`,
 `block` + presets, `cluster`, `archmap`) — and Network for module, class,
@@ -13,21 +13,20 @@ a lifecycle → `flow` / `state` (flows.md); data shape → `erd` (data-model.md
 tiers with no arrows → `layers`; area by number → `treemap`; a CI/CD pipeline
 → `flow` with `variant: dag`.
 
-#### `c4` — context / container / component
-Boxes with kind chips inside dashed boundaries; the frame tag shows the
-level. Answers one question per level. `c4`, not `block`, when C4 levels and
-system boundaries carry the message; `sequence` for the order of calls.
-- `level` is required, and one diagram holds one level. Never mix levels.
-- Context: who uses it and what does it talk to. `person`, `system` (usually
-  one), and `external` only. 4–8 nodes.
-- Container: the deployable pieces. One `boundary` (or `boundaries[]`) is the
-  system; every container carries `tech`; persons and externals sit outside.
-  5–9 nodes; past that, split the diagram.
-- Component: inside ONE container, named in the title; `family` codes the layer.
-- Every edge is a sentence: `label` an active verb phrase, `tech` the protocol.
-  One arrow from the caller; the reply is implied. Async edges are `dashed`.
-- Externals are things you do not deploy. If your team owns it, it is a container.
-- Omit `col`/`row` on every node for auto-layout; `dir: TB` flips it.
+#### `c4` — context / container / component, and the dynamic view
+The renderer draws the C4 notation: name, `[Container: tech]` type line,
+description, person and database shapes, the boundary type, and the key.
+`c4`, not `block`, when C4 levels carry the message. One question per level:
+- Context: who uses it, what it talks to. `person`, one `system`, `external`.
+- Container: one `boundary` is the system; every container has `tech`.
+  People and externals sit outside. 5–9 nodes; past that, split the diagram.
+- Component: the `boundary` is ONE container; its callers stay outside.
+- Never mix levels in one diagram. Externals are systems your team does not deploy.
+- `family` picks the shape: `web`, `mobile`, `queue`, `db`; `external` = outside.
+- Every edge is a sentence: `label` a verb phrase ("Reads from"), `tech` the
+  protocol. One arrow from the caller. Async edges are `dashed`.
+- `step: 1, 2, 3…` on the edges makes a dynamic view; many calls → `sequence`.
+- Omit `col`/`row`: people go on top. Zoom story: `reference/c4.md`.
 
 #### `block` — grid architecture with optional groups
 Boxes and arrows on a grid. Known `kind`s (db, queue, cache, gateway, cdn,
@@ -37,18 +36,18 @@ an unknown kind draws a plain box. Answers: what talks to what, at rest?
 - `gateway`, `lb`, `proxy`, and `ingress` draw as the tall vertical bar of
   system-design diagrams. It spans the rows of the services it fans out to
   on its own; set `h` to choose the span. Put the bar in its own column.
-- `preset` (infra, event, ddd, network, k8s) changes only the framing: the tag,
-  the eyebrow, and which kind is the accent entry. The YAML is the same.
+- `preset` (infra, event, ddd, network, k8s) changes only the tag, the eyebrow
+  and the accent entry. With `k8s`, namespaces are groups (nest by `parent`).
+- `step: N` numbers one request on its edges (`- 3. api -> cache: read`);
+  `path: read` / `path: write` colour two requests (`system-design.md`).
 - Omit `col`/`row` on every node for auto-layout. Use coordinates for a
   deliberate shape, and always with `groups`.
 - `layers:` switches to horizontal bands; nodes then use `layer`, not
   `col`/`row`. Do not mix the two modes.
 - `groups` nest by overlap (the larger paints first) or by `parent`. A child's
   cells must lie inside its parent's range (`W_GROUP_NESTING`).
-- `replicas: N` (2 or more) draws a stacked card. For a database replica set
-  use two nodes and a dashed `replicates` edge.
-- `preset: k8s`: a namespace is a group and `ingress` is the entry; nest
-  namespaces inside a cluster with `parent`.
+- `replicas: N` (2 or more) draws a pile of cards; a `cache` is one memory
+  card. A primary with read replicas: a `db`, a `replica`, a dashed edge.
 ```block
 groups:
   - { id: vpc, col: 1, row: 1, cols: 2, rows: 2, label: VPC }
@@ -87,8 +86,8 @@ Class boxes with attributes and methods; the relation `kind` drives the
 arrow marker. Answers: which classes inherit, implement, or depend on which?
 `uml`, not `erd`, for classes with behaviour; `erd` for tables and cardinality.
 #### `usecase` — UML use-case diagram
-Actors outside the `system` boundary, cases (verb phrases, ≤ 12) inside,
-`links` as `actor -> case`, `relations` `kind: include | extend | generalize`. Answers: who uses it for what?
+Actors outside the `system` box, cases (verb phrases, ≤ 12) inside; `links` as `actor -> case`; `relations` include (base → part),
+extend (extension → base, `label` = condition), generalize (cases or actors). Omit `side`; `focus` names the one case. Answers: who uses it for what?
 #### `pkg` — UML package diagram
 Tabbed folders with `contains` members, `parent` to nest, `deps` dashed with
 `kind: import | use | access | merge`. Answers: which module may depend on which?

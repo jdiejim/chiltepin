@@ -11,6 +11,7 @@
 
 import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
+import { hueClass, type Hue } from './hues.js';
 
 /** The swatch vocabulary — the encodings the skin can tell apart. */
 export type LegendSwatch =
@@ -66,6 +67,13 @@ export interface LegendItem {
   readonly dash?: string;
   /** Data path of the series / item this entry stands for (editors click it). */
   readonly path?: string;
+  /**
+   * The family hue a `chip` entry stands for: the chip takes the hue's text,
+   * outline and tint, so it reads as a small copy of the node chip.
+   */
+  readonly hue?: Hue;
+  /** A `chip` entry for a dashed kind (external, human gate): the chip's outline is dashed too. */
+  readonly dashed?: boolean;
 }
 
 const SW_W = 30;
@@ -195,7 +203,7 @@ export function renderLegend(items: readonly LegendItem[], listPath?: string): s
     .map((it) => {
       const sw =
         it.swatch === 'chip'
-          ? `<span class="lg-chip t-eyebrow">${escapeHtml(it.chip ?? '')}</span>`
+          ? `<span class="lg-chip t-eyebrow${hueClass(it.hue)}${it.dashed === true ? ' lg-dashed' : ''}">${escapeHtml(it.chip ?? '')}</span>`
           : swatchSvg(it.swatch, it.fill, it.stroke, it.dash);
       const path = it.path !== undefined ? bp(it.path) : '';
       return `<span class="lg-item"${path}>${sw}<span class="lg-label">${escapeHtml(it.label)}</span></span>`;

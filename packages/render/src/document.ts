@@ -23,7 +23,8 @@
 import type { Document } from 'chiltepin-core';
 import { FAVICON_LINK } from './brand.js';
 import { escapeHtml } from './escape.js';
-import { renderDocumentParts, type RenderPartsOptions } from './parts.js';
+import { renderToc, wantsToc } from './outline.js';
+import { renderDocumentSegments, type RenderPartsOptions } from './parts.js';
 import { systemSchemeCss } from './css.js';
 
 /** The `<html>` attribute and extra `<style>` a colour scheme needs. */
@@ -44,10 +45,19 @@ export type RenderOptions = RenderPartsOptions;
  * @returns A complete HTML string (`<!doctype html>…</html>`).
  */
 export function renderDocument(doc: Document, opts: RenderOptions = {}): string {
-  const parts = renderDocumentParts(doc, opts);
+  const parts = renderDocumentSegments(doc, opts);
   const themeBlock =
     parts.themeVars.length > 0 ? `\n<style>:root{${parts.themeVars}}</style>` : '';
   const scheme = schemeMarkup(opts.colorScheme);
+  const segments = parts.segments.map((s) => s.html).join('');
+  // A long document gets contents: a sticky rail beside the text on wide
+  // screens, a collapsed list above the first section below that.
+  const toc = wantsToc(doc, parts.outline) ? renderToc(parts.outline) : undefined;
+  const main =
+    toc !== undefined
+      ? `<div class="doc-grid"><div class="doc-main">${toc.inline}${segments}` +
+        `<p class="doc-end"><a href="#doc-top">Back to top</a></p></div>${toc.rail}</div>`
+      : segments;
   return (
     `<!doctype html>\n` +
     `<html lang="en"${scheme.stamp}>\n` +
@@ -55,16 +65,36 @@ export function renderDocument(doc: Document, opts: RenderOptions = {}): string 
     `<meta charset="utf-8">\n` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">\n` +
     `<title>${escapeHtml(parts.title)}</title>\n` +
+    socialMeta(parts.title, doc.meta?.subtitle) +
     `${FAVICON_LINK}\n` +
     `<style>${parts.css}</style>` +
     themeBlock +
     scheme.style +
     `\n</head>\n` +
     `<body>\n` +
-    `<div class="docskin">\n` +
-    parts.body +
+    `<div class="docskin${toc !== undefined ? ' has-toc' : ''}" id="doc-top">\n` +
+    parts.defs +
+    parts.cover +
+    main +
     `</div>\n` +
     `</body>\n` +
     `</html>\n`
+  );
+}
+
+/**
+ * The page's description for search results and link previews: the cover's
+ * subtitle as `<meta name="description">` and the Open Graph pair.
+ */
+function socialMeta(title: string, subtitle: string | undefined): string {
+  const desc =
+    subtitle !== undefined && subtitle.trim() !== ''
+      ? `<meta name="description" content="${escapeHtml(subtitle)}">\n` +
+        `<meta property="og:description" content="${escapeHtml(subtitle)}">\n`
+      : '';
+  return (
+    desc +
+    `<meta property="og:title" content="${escapeHtml(title)}">\n` +
+    `<meta property="og:type" content="article">\n`
   );
 }

@@ -6,8 +6,10 @@
  *
  * Skin (`DESIGN.md`): bars lighten with nesting depth (`ink` → `muted` →
  * `paper-2`; paper text on the dark fills, ink text on the light one), a
- * thin `rule-solid` connector joins a parent bar to each child at the
- * child's start, the critical path — from the root, follow the longest child
+ * thin `rule-solid` elbow joins a parent bar to each child: one spine drops
+ * from the parent's start and a short stub runs right into each child's
+ * start, so siblings share one line and no connector strikes through the
+ * duration and name printed after another bar. The critical path — from the root, follow the longest child
  * until a leaf — takes the one accent, and `error: true` draws a `negative`
  * outline plus an `ERR` chip. The duration sits at the bar end in `.t-arrow`
  * on the paper halo; a name that does not fit inside its bar follows the
@@ -16,7 +18,7 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { wrapText } from '../svg/wrapText.js';
+import { wrapAll } from './wrapAll.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { revealAttr } from '../svg/reveal.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
@@ -61,6 +63,12 @@ const CHIP_H = 13;
 const BAR_MIN = 2;
 /** Nesting stops counting past this depth (a cycle in `parent` would loop). */
 const DEPTH_CAP = 32;
+/** The connector spine sits this far inside the parent bar's start. */
+const SPINE_IN = 4;
+/** A child closer than this to the spine meets it at its top edge (no stub). */
+const STUB_MIN = 3;
+
+const rd = (n: number): number => Math.round(n * 10) / 10;
 
 interface Row {
   readonly idx: number;
@@ -211,9 +219,11 @@ export function renderSpans(data: BlockDataMap['spans']): string {
       .map((s, idx) => ({ s, idx }))
       .filter(({ s }) => s.service === service)
       .sort((a, b) => a.s.start - b.s.start || a.idx - b.idx);
-    const lines = wrapText(service, 18, 2);
+    // A long service name wraps whole (identifiers break at their joints);
+    // the lane grows a line for each extra line.
+    const lines = wrapAll(service, 18);
     const chip = dominantKind(mine.map((m) => m.s));
-    const minH = lines.length > 1 ? LANE_MIN_WRAPPED : LANE_MIN;
+    const minH = lines.length > 1 ? LANE_MIN_WRAPPED + (lines.length - 2) * 15 : LANE_MIN;
     const h = Math.max(minH, mine.length * ROW_H + LANE_PAD * 2);
     const y = cursor;
     lanes.push({ service, lines, chip, y, h });
@@ -278,7 +288,10 @@ export function renderSpans(data: BlockDataMap['spans']): string {
     s += `</g>`;
   });
 
-  // Parent → child connectors, under the bars.
+  // Parent → child elbows, under the bars: every child of a parent hangs off
+  // one spine just inside the parent's start (siblings' elbows overlap on it),
+  // then a stub runs right to the child's start at its middle. A child that
+  // starts at the spine meets it at its top edge instead.
   const rowById = new Map<string, Row>();
   for (const r of rows) if (!rowById.has(r.span.id)) rowById.set(r.span.id, r);
   s += `<g class="sp-links">`;
@@ -286,11 +299,14 @@ export function renderSpans(data: BlockDataMap['spans']): string {
     if (r.span.parent === undefined) continue;
     const p = rowById.get(r.span.parent);
     if (p === undefined || p === r) continue;
-    const cx = r.x;
     const down = r.y > p.y;
+    const spine = rd(p.x + Math.min(SPINE_IN, p.w / 2));
     const y1 = down ? p.y + BAR_H : p.y;
-    const y2 = down ? r.y : r.y + BAR_H;
-    s += `<line x1="${cx}" y1="${y1}" x2="${cx}" y2="${y2}" class="sp-link"${revealAttr(Math.max(reveal.get(r.idx) ?? 0, reveal.get(p.idx) ?? 0))}/>`;
+    const d =
+      r.x - spine < STUB_MIN
+        ? `M${rd(r.x)} ${y1} V${down ? r.y : r.y + BAR_H}`
+        : `M${spine} ${y1} V${rd(r.y + BAR_H / 2)} H${rd(r.x)}`;
+    s += `<path d="${d}" class="sp-link"${revealAttr(Math.max(reveal.get(r.idx) ?? 0, reveal.get(p.idx) ?? 0))}/>`;
   }
   s += `</g>`;
 

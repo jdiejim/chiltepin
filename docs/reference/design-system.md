@@ -2,6 +2,7 @@
 title: Aurora design system
 subtitle: Tokens, type, usage rules, and component status for product teams.
 tag: Design system · v2
+status: example
 ```
 
 ## Color tokens

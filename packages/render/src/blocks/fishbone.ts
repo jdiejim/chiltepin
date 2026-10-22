@@ -18,7 +18,7 @@
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
-import { wrapText } from '../svg/wrapText.js';
+import { cutTitle, fitText, FONT, textWidth, type CutSite, type Font, type Wrapped } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 
@@ -30,31 +30,25 @@ const MIN_H = 64;
 const PITCH_GAP = 28;
 const PAD = 26;
 
-interface Clamped {
-  readonly lines: string[];
-  /** True when lines were dropped — the render must carry a full-text <title>. */
-  readonly truncated: boolean;
-}
+/** Wrapped text; when lines were dropped the last kept line ends in `…` (see `fitText`). */
+type Clamped = Wrapped;
 
-/** Wraps and clamps: when lines were dropped, the last kept line gains `…`. */
-function wrapClamp(text: string, max: number, maxLines: number): Clamped {
-  const lines = wrapText(text, max, maxLines);
-  const kept = lines.join(' ');
-  const full = String(text).trim().split(/\s+/).join(' ');
-  const truncated = kept !== full && lines.length > 0;
-  if (truncated) {
-    const last = lines[lines.length - 1] ?? '';
-    lines[lines.length - 1] = `${last}…`;
-  }
-  return { lines, truncated };
+/** Wraps to `width` px and clamps to `maxLines`; a cut is marked, titled and reported. */
+function wrapClamp(text: string, width: number, maxLines: number, font: Font, report: CutSite): Clamped {
+  return fitText(text, { width, font, maxLines, report });
 }
 
 /** Full-text hover fallback, emitted only where the visible text was clamped. */
-const tip = (c: Clamped, full: string): string =>
-  c.truncated ? `<title>${escapeHtml(full)}</title>` : '';
+const tip = (c: Clamped): string => cutTitle(c);
 
-const widest = (lines: readonly string[]): number =>
-  Math.max(0, ...lines.map((ln) => ln.length));
+/** The widest line, px, in `font`. */
+const widest = (lines: readonly string[], font: Font): number =>
+  Math.max(0, ...lines.map((ln) => textWidth(ln, font)));
+
+/** Text widths: a cause label, a specific cause, the effect in the head. */
+const LABEL_W = 118;
+const ITEM_W = 160;
+const EFFECT_W = 168;
 
 interface BoneNorm {
   /** Index into `data.causes` (for data paths). */
@@ -76,10 +70,19 @@ interface BoneNorm {
 
 export function renderFishbone(data: BlockDataMap['fishbone']): string {
   const bones: BoneNorm[] = data.causes.map((c, idx) => {
-    const labelClamped = wrapClamp(c.label, 16, 4);
-    const items = (c.items ?? []).map((it) => {
-      const clamped = wrapClamp(it, 24, 2);
-      return { full: it, clamped, w: widest(clamped.lines) * 6.2 };
+    const labelClamped = wrapClamp(c.label, LABEL_W, 4, FONT.name, {
+      path: `causes.${idx}.label`,
+      field: 'label',
+      hint: 'Shorten the cause `label`.',
+    });
+    const items = (c.items ?? []).map((it, j) => {
+      const clamped = wrapClamp(it, ITEM_W, 3, FONT.sub, {
+        path: `causes.${idx}.items.${j}`,
+        owner: c.label,
+        field: 'item',
+        hint: 'Shorten the cause, or split it into two items.',
+      });
+      return { full: it, clamped, w: widest(clamped.lines, FONT.sub) };
     });
     const maxItemLines = Math.max(1, ...items.map((it) => it.clamped.lines.length));
     const gap = 14 + maxItemLines * 13;
@@ -88,7 +91,7 @@ export function renderFishbone(data: BlockDataMap['fishbone']): string {
       idx,
       label: c.label,
       labelClamped,
-      labelW: widest(labelClamped.lines) * 7.4,
+      labelW: widest(labelClamped.lines, FONT.name),
       items,
       gap,
       needH,
@@ -115,7 +118,8 @@ export function renderFishbone(data: BlockDataMap['fishbone']): string {
     let env = h / TAN + b.labelW / 2 + 4;
     b.items.forEach((it, j) => {
       const v = h - (26 + j * b.gap); // height above/below the spine
-      env = Math.max(env, v / TAN + 10 + it.w);
+      // A wrapped item's outer lines step clear of the slanting bone.
+      env = Math.max(env, v / TAN + 10 + it.w + ((it.clamped.lines.length - 1) * 13) / 2 / TAN);
     });
     return Math.max(env, 40);
   };
@@ -135,10 +139,10 @@ export function renderFishbone(data: BlockDataMap['fishbone']): string {
   const axTop = place(top, hTop, PAD);
   const axBot = place(bottom, hBot, PAD + 44);
 
-  // Effect head, wrapped to at most 3 lines.
-  const eff = wrapClamp(data.effect, 16, 3);
+  // Effect head, wrapped to at most 4 lines.
+  const eff = wrapClamp(data.effect, EFFECT_W, 4, FONT.name, { path: 'effect', field: 'effect', hint: 'Shorten the `effect`.' });
   const effLines = eff.lines;
-  const headW = Math.max(96, widest(effLines) * 7.4 + 28);
+  const headW = Math.max(96, widest(effLines, FONT.name) + 28);
   const headH = effLines.length * 16 + 18;
 
   const spineY = Math.max(PAD + labTop + hTop, PAD + headH / 2 + 4);
@@ -167,7 +171,7 @@ export function renderFishbone(data: BlockDataMap['fishbone']): string {
     const lh = 15;
     const n = b.labelClamped.lines.length;
     const firstY = dir === -1 ? oy - 10 - (n - 1) * lh : oy + 20;
-    g += `<g${bp(`causes.${b.idx}.label`)}>${tip(b.labelClamped, b.label)}`;
+    g += `<g${bp(`causes.${b.idx}.label`)}>${tip(b.labelClamped)}`;
     b.labelClamped.lines.forEach((ln, li) => {
       g += `<text x="${f(ox)}" y="${f(firstY + li * lh)}" class="t-name" text-anchor="middle">${escapeHtml(ln)}</text>`;
     });
@@ -179,11 +183,14 @@ export function renderFishbone(data: BlockDataMap['fishbone']): string {
         const v = h - (26 + j * b.gap); // height from spine; item 0 nearest the label
         const y = spineY + dir * v;
         const bx = ax - v / TAN;
-        let ig = `<g${bp(`causes.${b.idx}.items.${j}`)}>${tip(it.clamped, it.full)}`;
+        let ig = `<g${bp(`causes.${b.idx}.items.${j}`)}>${tip(it.clamped)}`;
         ig += `<path d="M ${f(bx - 6)} ${f(y)} L ${f(bx)} ${f(y)}" stroke="var(--muted)" stroke-width="1.25"/>`;
         const m = it.clamped.lines.length;
         it.clamped.lines.forEach((ln, li) => {
-          ig += `<text x="${f(bx - 10)}" y="${f(y + 3.5 - ((m - 1) * 13) / 2 + li * 13)}" class="t-sub c-ink" text-anchor="end">${escapeHtml(ln)}</text>`;
+          // A line further from the spine than the tick meets the bone further
+          // out: it steps left by the bone's run over that height.
+          const out = Math.max(0, (li - (m - 1) / 2) * 13 * dir);
+          ig += `<text x="${f(bx - 10 - out / TAN)}" y="${f(y + 3.5 - ((m - 1) * 13) / 2 + li * 13)}" class="t-sub c-ink" text-anchor="end">${escapeHtml(ln)}</text>`;
         });
         g += ig + `</g>`;
       });
@@ -205,7 +212,7 @@ export function renderFishbone(data: BlockDataMap['fishbone']): string {
 
   // The head: the effect in the accent box at the right of the spine.
   const hy = spineY - headH / 2;
-  s += `<g${bp('effect')}>${tip(eff, data.effect)}`;
+  s += `<g${bp('effect')}>${tip(eff)}`;
   s += `<rect x="${f(headX)}" y="${f(hy)}" width="${f(headW)}" height="${f(headH)}" rx="4" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1.5"/>`;
   effLines.forEach((ln, li) => {
     s += `<text x="${f(headX + headW / 2)}" y="${f(spineY + 4.5 - ((effLines.length - 1) * 16) / 2 + li * 16)}" class="t-name c-accent" text-anchor="middle">${escapeHtml(ln)}</text>`;

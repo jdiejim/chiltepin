@@ -20,7 +20,7 @@
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
-import { wrapText } from '../svg/wrapText.js';
+import { cutTitle, fitText, FONT, reportCut, textWidth, type Wrapped } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 
@@ -39,6 +39,15 @@ const CARD_ATTRS: Record<Card, string> = {
 const LINK_ATTRS = 'fill="none" stroke="var(--muted)" stroke-width="1.25"';
 
 // ─── variant: issue (MECE issue tree — the former `mece` type) ───────────────
+
+/** Line height of an issue-tree card label, and the tallest a card grows. */
+const ISSUE_LH = 14;
+const ISSUE_MAX_H = 104;
+
+/** `35% of parent` as `35%`; `''` with no parent value to share. */
+function shareOf(v: number, parent: number | undefined): string {
+  return typeof parent === 'number' && parent > 0 ? `${Math.round((v / parent) * 100)}%` : '';
+}
 
 function renderIssueTree(data: TreeData): string {
   const nodes = data.nodes ?? [];
@@ -77,8 +86,30 @@ function renderIssueTree(data: TreeData): string {
   };
   for (const r of roots) dfs(r, 0);
 
-  const nodeW = 168;
-  const nodeH = 50;
+  // Each card: the label (wrapped), the note under it, and — when the tree
+  // carries values — the value and its share of the parent at the right. One
+  // card size for the whole tree, tall enough for the longest card.
+  const valueOf = (n: Node): { own: string; share: string } | undefined => {
+    if (typeof n.value !== 'number') return undefined;
+    const parent = n.parent !== undefined ? byId.get(n.parent) : undefined;
+    return { own: fmtValue(n.value, data.unit), share: shareOf(n.value, parent?.value) };
+  };
+  const valueW = Math.max(
+    0,
+    ...nodes.map((n) => {
+      const v = valueOf(n);
+      return v === undefined ? 0 : Math.max(textWidth(v.own, FONT.name), textWidth(v.share, FONT.sub)) + 10;
+    }),
+  );
+  const nodeW = 168 + Math.ceil(valueW);
+  const textW = 168 - 28;
+  const fitCard = (n: Node, lines: number): { label: Wrapped; note: Wrapped } => ({
+    label: fitText(n.label, { width: textW, font: FONT.name, maxLines: lines }),
+    note: fitText(n.note, { width: textW, font: FONT.sub, maxLines: 2 }),
+  });
+  const cardH = (c: { label: Wrapped; note: Wrapped }): number =>
+    c.label.lines.length * ISSUE_LH + (c.note.lines.length > 0 ? 3 + c.note.lines.length * 12 : 0) + 20;
+  const nodeH = Math.min(ISSUE_MAX_H, Math.max(50, ...nodes.map((n) => cardH(fitCard(n, 4)))));
   const gapY = 16;
   const colGap = 56;
   const padX = 24;
@@ -102,8 +133,6 @@ function renderIssueTree(data: TreeData): string {
     s += `<path ${LINK_ATTRS} d="M ${px} ${pcy} H ${midX} V ${ccy} H ${cx}"/>`;
   }
 
-  // nodes — wrap label to fit inside the box (max width ~150px, ~20 chars per line).
-  // If a note is present, the label is single-line; otherwise allow up to two lines.
   const cards = new Set<Card>();
   s += `<g${bl('nodes')}>`;
   nodes.forEach((n, ni) => {
@@ -114,25 +143,43 @@ function renderIssueTree(data: TreeData): string {
     const card: Card = d === 0 ? 'root' : (children.get(n.id) ?? []).length > 0 ? 'branch' : 'leaf';
     cards.add(card);
     const rect = `<rect x="${x}" y="${y}" width="${nodeW}" height="${nodeH}" rx="4" ${CARD_ATTRS[card]}/>`;
-    const labelX = card === 'root' ? x + nodeW / 2 : x + 14;
+    // The most label lines the card holds beside the note; a longer label ends in "…".
+    let fit = fitCard(n, 4);
+    for (let lines = 3; cardH(fit) > nodeH && lines >= 1; lines--) fit = fitCard(n, lines);
+    if (fit.label.truncated) {
+      reportCut({ path: `nodes.${ni}.label`, field: 'label', full: fit.label.full, hint: 'Shorten the `label`, or move the detail to `note`.' });
+    }
+    if (fit.note.truncated) {
+      reportCut({ path: `nodes.${ni}.note`, owner: n.label, field: 'note', full: fit.note.full, hint: 'Shorten the `note`.' });
+    }
+    const labelX = card === 'root' ? x + 14 + textW / 2 : x + 14;
     const anchor = card === 'root' ? 'middle' : 'start';
-    const lines = wrapText(n.label, card === 'root' ? 22 : 20, n.note !== undefined ? 1 : 2);
-    const startY =
-      lines.length === 2
-        ? y + 22
-        : y + (n.note !== undefined ? 22 : 30);
+    const blockH = cardH(fit) - 20;
+    const top = y + (nodeH - blockH) / 2;
     const cls = card === 'root' ? 't-name c-accent' : 't-name';
-    const labelTexts = lines
+    const labelTexts = fit.label.lines
       .map(
         (ln, j) =>
-          `<text x="${labelX}" y="${startY + j * 14}" class="${cls}" text-anchor="${anchor}">${escapeHtml(ln)}</text>`,
+          `<text x="${labelX}" y="${(top + 10 + j * ISSUE_LH).toFixed(1)}" class="${cls}" text-anchor="${anchor}">${j === 0 ? cutTitle(fit.label) : ''}${escapeHtml(ln)}</text>`,
       )
       .join('');
-    const note =
-      n.note !== undefined
-        ? `<text x="${labelX}" y="${y + 38}" class="t-sub c-muted" text-anchor="${anchor}">${escapeHtml(n.note)}</text>`
-        : '';
-    s += `<g${bp(`nodes.${ni}`)}>` + rect + labelTexts + note + `</g>`;
+    const noteTop = top + fit.label.lines.length * ISSUE_LH + 3;
+    const note = fit.note.lines
+      .map(
+        (ln, j) =>
+          `<text x="${labelX}" y="${(noteTop + 9 + j * 12).toFixed(1)}" class="t-sub c-muted" text-anchor="${anchor}">${j === 0 ? cutTitle(fit.note) : ''}${escapeHtml(ln)}</text>`,
+      )
+      .join('');
+    // The value, and the share of its parent it accounts for, at the right.
+    const v = valueOf(n);
+    const value =
+      v === undefined
+        ? ''
+        : `<text x="${x + nodeW - 12}" y="${(y + nodeH / 2 - (v.share !== '' ? 2 : -4)).toFixed(1)}" class="${cls}" text-anchor="end"${bp(`nodes.${ni}.value`)}>${escapeHtml(v.own)}</text>` +
+          (v.share !== ''
+            ? `<text x="${x + nodeW - 12}" y="${(y + nodeH / 2 + 11).toFixed(1)}" class="t-sub c-muted" text-anchor="end">${escapeHtml(v.share)}</text>`
+            : '');
+    s += `<g${bp(`nodes.${ni}`)}>` + rect + labelTexts + note + value + `</g>`;
   });
   s += `</g>`; // close the nodes list container
 
@@ -162,12 +209,16 @@ function renderIssueTree(data: TreeData): string {
 // The root card takes the accent; every other card is a calm paper card.
 
 const ORG_W = 148;
-const ORG_H = 58;
+/** A card's height when its text fits (it grows, to {@link ORG_MAX_H}, when not). */
+const ORG_BASE_H = 58;
+const ORG_MAX_H = 112;
 const ORG_HGAP = 18;
 const ORG_VGAP = 34;
 const ORG_SLOT = ORG_W + ORG_HGAP;
-const ORG_LABEL_CHARS = 20;
-const ORG_ROLE_CHARS = 24;
+/** The width of a card's text column. */
+const ORG_TEXT_W = ORG_W - 12;
+const ORG_NAME_LH = 14;
+const ORG_SUB_LH = 12;
 // A parent with more than this many LEAF children stacks those leaves in up
 // to two columns under itself — a wide rank stays readable instead of
 // stretching the viewBox until every name scales away.
@@ -175,15 +226,29 @@ const ORG_STACK_MAX = 6;
 const ORG_STACK_GAP = 26; // corridor between the two stacked columns (trunk)
 const ORG_STACK_VGAP = 10; // vertical gap between stacked rows
 
-/**
- * Caps one wrapped line so an unbroken word can never overflow the card —
- * cutting at the last word boundary when one exists past the halfway mark.
- */
-function orgClip(line: string, max: number): string {
-  if (line.length <= max) return line;
-  const head = line.slice(0, max - 1);
-  const sp = head.lastIndexOf(' ');
-  return `${sp > max / 2 ? head.slice(0, sp) : head}…`;
+/** An org card's text: the name (≤3 lines), the role (≤2), and the value line. */
+interface OrgText {
+  readonly label: Wrapped;
+  readonly role: Wrapped;
+  readonly value: string;
+}
+
+/** Height of an org card's text block. */
+function orgBlockH(t: OrgText): number {
+  return (
+    t.label.lines.length * ORG_NAME_LH +
+    (t.role.lines.length > 0 ? 7 + t.role.lines.length * ORG_SUB_LH : 0) +
+    (t.value !== '' ? 4 + ORG_SUB_LH : 0)
+  );
+}
+
+/** Fits an org card's text to `nameLines` / `roleLines` at most. */
+function orgText(n: Node, value: string, nameLines: number, roleLines: number): OrgText {
+  return {
+    label: fitText(n.label, { width: ORG_TEXT_W, font: FONT.name, maxLines: nameLines }),
+    role: fitText(n.role, { width: ORG_TEXT_W, font: FONT.sub, maxLines: roleLines }),
+    value,
+  };
 }
 
 function renderOrgTree(data: TreeData): string {
@@ -201,6 +266,20 @@ function renderOrgTree(data: TreeData): string {
     else roots.push(n.id);
   }
 
+  // The value line: the number with its unit, and its share of the parent.
+  const valueLine = (n: Node): string => {
+    if (typeof n.value !== 'number') return '';
+    const parent = n.parent !== undefined ? byId.get(n.parent) : undefined;
+    const share = shareOf(n.value, parent?.value);
+    return share !== '' ? `${fmtValue(n.value, data.unit)} · ${share}` : fmtValue(n.value, data.unit);
+  };
+  // One card height for the chart: tall enough for every card's whole text
+  // (name ≤3 lines, role ≤2), up to a cap; past it the text ends in "…".
+  const ORG_PAD = 20;
+  const ORG_H = Math.min(
+    ORG_MAX_H,
+    Math.max(ORG_BASE_H, ...nodes.map((n) => orgBlockH(orgText(n, valueLine(n), 3, 2)) + ORG_PAD)),
+  );
   // The stacking rule: a parent with more than ORG_STACK_MAX leaf children
   // (leaf = no children of its own) stacks those leaves in up to two columns
   // under itself. Branch children keep their normal recursive slots.
@@ -353,35 +432,40 @@ function renderOrgTree(data: TreeData): string {
     const root = (depth.get(n.id) ?? 0) === 0;
     if (root) hasRoot = true;
     else hasReport = true;
-    const hasRole = n.role !== undefined && n.role !== '';
-    const rawLines = wrapText(n.label, ORG_LABEL_CHARS, 2);
-    const lines = rawLines.map((ln) => orgClip(ln, ORG_LABEL_CHARS + 2));
-    const truncated =
-      lines.join(' ').length < String(n.label).trim().replace(/\s+/g, ' ').length;
-    if (truncated && lines.length > 0) {
-      // The cut is visible on the card, not only in the <title>.
-      const last = lines[lines.length - 1] ?? '';
-      lines[lines.length - 1] = last.endsWith('…') ? last : orgClip(`${last}…`, ORG_LABEL_CHARS + 2);
+    // The whole text when it fits the card; else the role, then the name,
+    // give up lines, and what still does not fit ends with "…".
+    const plans: ReadonlyArray<readonly [number, number]> = [[3, 2], [3, 1], [2, 1], [1, 1]];
+    let text = orgText(n, valueLine(n), 3, 2);
+    for (const [nl, rl] of plans) {
+      text = orgText(n, valueLine(n), nl, rl);
+      if (orgBlockH(text) + ORG_PAD <= ORG_H) break;
     }
-    const two = lines.length === 2;
-    const labelStart = hasRole ? (two ? y + 19 : y + 25) : two ? y + 25 : y + 33;
-    const roleY = two ? y + 49 : y + 43;
+    if (text.label.truncated) {
+      reportCut({ path: `nodes.${ni}.label`, field: 'label', full: text.label.full, hint: 'Shorten the `label`, or move the detail to `role`.' });
+    }
+    if (text.role.truncated) {
+      reportCut({ path: `nodes.${ni}.role`, owner: n.label, field: 'role', full: text.role.full, hint: 'Shorten the `role`.' });
+    }
     const midX = x + ORG_W / 2;
     const cls = root ? 't-name c-accent' : 't-name';
-    const labelSvg = lines
-      .map(
-        (ln, j) =>
-          `<text x="${midX}" y="${labelStart + j * 14}" class="${cls}" text-anchor="middle"${j === 0 ? bp(`nodes.${ni}.label`) : ''}>${escapeHtml(ln)}</text>`,
-      )
-      .join('');
-    const role = hasRole
-      ? `<text x="${midX}" y="${roleY}" class="t-sub c-muted" text-anchor="middle"${bp(`nodes.${ni}.role`)}>${escapeHtml(orgClip(String(n.role), ORG_ROLE_CHARS))}</text>`
-      : '';
-    const roleTruncated = hasRole && String(n.role).length > ORG_ROLE_CHARS;
-    const tip =
-      truncated || roleTruncated
-        ? `<title>${escapeHtml(hasRole ? `${n.label} — ${String(n.role)}` : n.label)}</title>`
-        : '';
+    let ty = y + (ORG_H - orgBlockH(text)) / 2 + 10;
+    let labelSvg = '';
+    text.label.lines.forEach((ln, j) => {
+      labelSvg += `<text x="${midX}" y="${ty.toFixed(1)}" class="${cls}" text-anchor="middle"${j === 0 ? bp(`nodes.${ni}.label`) : ''}>${escapeHtml(ln)}</text>`;
+      ty += ORG_NAME_LH;
+    });
+    ty += 7 - ORG_NAME_LH + ORG_SUB_LH - 1;
+    let role = '';
+    text.role.lines.forEach((ln, j) => {
+      role += `<text x="${midX}" y="${ty.toFixed(1)}" class="t-sub c-muted" text-anchor="middle"${j === 0 ? bp(`nodes.${ni}.role`) : ''}>${escapeHtml(ln)}</text>`;
+      ty += ORG_SUB_LH;
+    });
+    if (text.value !== '') {
+      if (text.role.lines.length > 0) ty += 4;
+      role += `<text x="${midX}" y="${ty.toFixed(1)}" class="t-sub" text-anchor="middle"${bp(`nodes.${ni}.value`)}>${escapeHtml(text.value)}</text>`;
+    }
+    const cut = text.label.truncated || text.role.truncated;
+    const tip = cut ? `<title>${escapeHtml(n.role !== undefined && n.role !== '' ? `${n.label} — ${String(n.role)}` : n.label)}</title>` : '';
     s +=
       `<g${bp(`nodes.${ni}`)}>` +
       `<rect x="${x}" y="${y}" width="${ORG_W}" height="${ORG_H}" rx="4" ${CARD_ATTRS[root ? 'root' : 'branch']}/>` +
@@ -410,11 +494,18 @@ function renderOrgTree(data: TreeData): string {
 
 // ─── default: indented folder tree ───────────────────────────────────────────
 
-/** A node's value with the block's unit — integers stay integers. */
+/**
+ * A node's value with the block's unit: two decimals at most, five-digit and
+ * longer numbers grouped (`2400`, `12,400`); a currency sign leads (`$420`),
+ * a word unit follows after a space (`42 people`), a symbol or short unit
+ * follows tight (`3.4%`, `420k$`, `2400ms`).
+ */
 function fmtValue(v: number, unit: string | undefined): string {
   const rounded = Math.round(v * 100) / 100;
-  const text = Number.isInteger(rounded) ? String(rounded) : String(rounded);
-  return unit !== undefined ? `${text}${unit}` : text;
+  const text = Math.abs(rounded) >= 10000 ? rounded.toLocaleString('en-US', { maximumFractionDigits: 2 }) : String(rounded);
+  if (unit === undefined || unit === '') return text;
+  if (/^[$€£¥₹]$/u.test(unit)) return `${unit}${text}`;
+  return /^\p{L}{4,}|\s/u.test(unit) ? `${text} ${unit}` : `${text}${unit}`;
 }
 
 export function renderTree(data: TreeData): string {

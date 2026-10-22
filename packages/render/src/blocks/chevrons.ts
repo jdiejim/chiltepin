@@ -13,6 +13,11 @@
  * `current`, every step is outlined. A step the author toned `accent: red`
  * reads as `negative` (an exit, a failure step). The viewBox grows with the
  * count and the wrapped lines; nothing is clipped.
+ *
+ * Width: a row of chevrons shares {@link TARGET_W} (about the page column),
+ * so a short strip gets wide chevrons and a long one narrow ones, within
+ * {@link W_MIN}–{@link W_MAX}. The label and desc character budgets come from
+ * that width, and the chevron grows a line taller for a three-line label.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -20,25 +25,24 @@ import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { countPhrase, diagramName } from '../svg/svgTitle.js';
-import { wrapText } from '../svg/wrapText.js';
+import { FONT, fitText } from '../svg/wrapText.js';
 import { diagramFrame } from './frame.js';
 
 /** Chevrons per row before the strip wraps. */
 const PER_ROW = 8;
 const PAD = 22;
-/** Chevron width and height. */
-const W = 150;
-const H = 50;
+/** The width a row of chevrons shares, and the bounds of one chevron's width. */
+const TARGET_W = 1000;
+const W_MIN = 130;
+const W_MAX = 230;
+/** Chevron height for two label lines; a three-line label adds a line. */
+const H_BASE = 50;
 /** Depth of the notch on the left and the point on the right. */
 const NOTCH = 14;
 /** Gap between a point and the next notch. */
 const GAP = 5;
 /** Vertical gap between rows. */
 const ROW_GAP = 18;
-/** Characters per label line inside the chevron (13px semibold Inter). */
-const LABEL_CHARS = 16;
-/** Characters per desc line under the chevron (10px mono). */
-const DESC_CHARS = 23;
 const LINE_H = 15;
 const DESC_LINE_H = 13;
 
@@ -64,24 +68,24 @@ const TEXT_CLS: Record<Tone, string> = {
 };
 
 /**
- * Wraps `text` to at most `lines` lines of `chars`; when the text does not
- * fit, the last line is cut with an ellipsis. Returns the lines and whether
- * anything was cut (the caller then adds a `<title>` with the full text).
+ * Wraps `text` to at most `lines` lines of `width` px in `font`; when the
+ * text does not fit, the last line ends with "…" and the cut is reported.
+ * The caller adds a `<title>` with the full text.
  */
-function fitLines(text: string, chars: number, lines: number): { lines: string[]; cut: boolean } {
-  const out = wrapText(text, chars, lines);
-  const whole = text.trim().split(/\s+/).join(' ');
-  let cut = out.join(' ') !== whole;
-  const fixed = out.map((l, i) => {
-    if (l.length <= chars && !(cut && i === out.length - 1)) return l;
-    cut = true;
-    return `${l.slice(0, Math.max(1, chars - 1)).trimEnd()}…`;
-  });
-  return { lines: fixed, cut };
+function fitLines(text: string, width: number, lines: number, font: typeof FONT.name | typeof FONT.sub, path: string): { lines: string[]; cut: boolean } {
+  const w = fitText(text, { width, font, maxLines: lines, report: { field: path.endsWith('desc') ? 'desc' : 'label', path } });
+  return { lines: w.lines, cut: w.truncated };
+}
+
+/** One chevron's width for a row of `perRow`: the row shares {@link TARGET_W}. */
+export function chevronWidth(perRow: number): number {
+  const n = Math.max(perRow, 1);
+  const w = (TARGET_W - PAD * 2 + (n - 1) * (NOTCH - GAP)) / n;
+  return Math.round(Math.min(W_MAX, Math.max(W_MIN, w)));
 }
 
 /** The polygon points of a chevron whose box starts at (x, y). */
-function chevronPoints(x: number, y: number): string {
+function chevronPoints(x: number, y: number, W: number, H: number): string {
   const f = (v: number): string => v.toFixed(1);
   return [
     `${f(x)},${f(y)}`,
@@ -106,10 +110,17 @@ export function renderChevrons(data: BlockDataMap['chevrons']): string {
     return i + 1 < current ? 'done' : 'todo';
   };
 
-  const labels = steps.map((s) => fitLines(s.label, LABEL_CHARS, 2));
-  const descs = steps.map((s) => (s.desc !== undefined ? fitLines(s.desc, DESC_CHARS, 2) : { lines: [], cut: false }));
-
   const perRow = Math.min(PER_ROW, n);
+  const W = chevronWidth(perRow);
+  // Character budgets from the width: the label sits between the notch and
+  // the point; the desc under the whole chevron.
+  const labelW = W - NOTCH * 2 - 10;
+  const descW = W - 8;
+  const labels = steps.map((s, i) => fitLines(s.label, labelW, 3, FONT.name, `steps.${i}.label`));
+  const descs = steps.map((s, i) => (s.desc !== undefined ? fitLines(s.desc, descW, 3, FONT.sub, `steps.${i}.desc`) : { lines: [], cut: false }));
+  const maxLabelLines = Math.max(1, ...labels.map((l) => l.lines.length));
+  const H = H_BASE + Math.max(0, maxLabelLines - 2) * LINE_H;
+
   const rows = Math.ceil(n / PER_ROW);
   const step = W - NOTCH + GAP;
   const width = PAD * 2 + (perRow - 1) * step + W;
@@ -146,7 +157,7 @@ export function renderChevrons(data: BlockDataMap['chevrons']): string {
     if (lab.cut || des.cut) {
       g += `<title>${escapeHtml(st.desc !== undefined ? `${st.label} — ${st.desc}` : st.label)}</title>`;
     }
-    g += `<polygon points="${chevronPoints(x, y)}" fill="${FILL[tone]}" stroke="${STROKE[tone]}" stroke-width="${tone === 'current' ? 1.5 : 1.25}" stroke-linejoin="round"/>`;
+    g += `<polygon points="${chevronPoints(x, y, W, H)}" fill="${FILL[tone]}" stroke="${STROKE[tone]}" stroke-width="${tone === 'current' ? 1.5 : 1.25}" stroke-linejoin="round"/>`;
     // Label lines centred on the chevron's vertical middle.
     const lh = lab.lines.length;
     const ty0 = y + H / 2 - ((lh - 1) * LINE_H) / 2 + 4.5;

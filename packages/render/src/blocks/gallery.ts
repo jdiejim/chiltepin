@@ -13,6 +13,24 @@ import { bl, bp } from '../paths.js';
 // Same-package cycle: the registry imports this renderer, and we use the registry
 // only at call time (renderNested), by which point it's fully initialised.
 import { htmlRenderers } from '../registry.js';
+import { MIN_STAGE_SCALE, svgWidth } from './frame.js';
+
+/** The page column a gallery lays out in, in px (the default page width less its gutters). */
+const COLUMN_PX = 1068;
+/** Grid gap between cells, in px (`.gl-grid` in css.ts). */
+const GAP_PX = 14;
+/** A frame's own side padding plus the stage inset, in px. */
+const FRAME_PAD_PX = 50;
+
+/**
+ * True when a nested drawing would shrink below the stage scale floor in one
+ * grid cell — it then takes the whole row instead of rendering at 40%.
+ */
+export function needsFullRow(drawingWidth: number, cols: number): boolean {
+  if (cols <= 1 || drawingWidth <= 0) return false;
+  const cell = (COLUMN_PX - GAP_PX * (cols - 1)) / cols - FRAME_PAD_PX;
+  return drawingWidth * MIN_STAGE_SCALE > cell;
+}
 
 type GalleryData = BlockDataMap['gallery'];
 type GalleryItem = GalleryData['items'][number];
@@ -25,7 +43,7 @@ function renderNested(block: { readonly type: string }): string {
   return fn !== undefined ? fn(data) : '';
 }
 
-function renderCard(item: GalleryItem, i: number): string {
+function renderCard(item: GalleryItem, i: number, cols: number): string {
   const accent = item.accent !== undefined ? ` gl-${item.accent}` : '';
   const title =
     item.title !== undefined
@@ -37,8 +55,11 @@ function renderCard(item: GalleryItem, i: number): string {
       : '';
 
   // A nested diagram cell — the diagram brings its own frame, so no card chrome.
+  // A drawing too wide for its cell takes the whole row (see needsFullRow).
   if (item.block !== undefined) {
-    return `<div class="gl-cell${accent}"${bp(`items.${i}`)}>${title}${renderNested(item.block)}${caption}</div>`;
+    const nested = renderNested(item.block);
+    const wide = needsFullRow(svgWidth(nested), cols) ? ' gl-span' : '';
+    return `<div class="gl-cell${wide}${accent}"${bp(`items.${i}`)}>${title}${nested}${caption}</div>`;
   }
   // A code cell.
   if (item.code !== undefined) {
@@ -58,6 +79,6 @@ export function renderGallery(data: GalleryData): string {
     data.description !== undefined ? `<p class="gl-desc">${escapeHtml(data.description)}</p>` : '';
   const cols = data.cols !== undefined && data.cols > 0 ? Math.floor(data.cols) : 2;
   const style = ` style="--gl-cols:${cols}"`;
-  const cards = data.items.map((item, i) => renderCard(item, i)).join('');
+  const cards = data.items.map((item, i) => renderCard(item, i, cols)).join('');
   return `<div class="gallery">${head}${desc}<div class="gl-grid"${style}${bl('items')}>${cards}</div></div>`;
 }

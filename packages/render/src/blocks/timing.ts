@@ -10,8 +10,9 @@
  * `constraints` are `{ label }` duration brackets drawn above the lanes.
  *
  * Skin (`DESIGN.md`): the lifeline is `muted`; a state the author marked
- * `accent: red` is drawn in `negative` (a failure state); any other single
- * marked state takes the accent — the author's count, not the renderer's.
+ * `accent: red` is drawn in `negative` (a failure state); the FIRST other
+ * marked state takes the accent (one focus per diagram) and later marks draw
+ * plain, so two marks never cancel each other out.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -19,8 +20,9 @@ import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
 import { DECORATIVE } from '../svg/decorative.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
-import { marksOf } from '../svg/dsTone.js';
+import type { Mark } from '../svg/dsTone.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
+import { cutTitle, ellipsize, FONT } from '../svg/wrapText.js';
 import { diagramFrame } from './frame.js';
 
 type TimingData = BlockDataMap['timing'];
@@ -60,12 +62,23 @@ function niceStep(span: number): number {
 const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;
 const fmt = (v: number): string => (Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100));
 
-/** Cuts `text` to `max` characters with an ellipsis; `''` when fewer than 2 fit. */
-function cut(text: string, max: number): string {
-  if (text.length <= max) return text;
-  if (max < 2) return '';
-  return `${text.slice(0, max - 1)}…`;
+/**
+ * The mark of every state: `red` is `negative`; the first other marked state
+ * is `focal` (the one accent); any later mark draws plain. (The shared
+ * `marksOf` drops every mark when two are set — a timing diagram keeps the
+ * first, because the author clearly meant one state.)
+ */
+export function timingMarks(accents: ReadonlyArray<string | undefined>): Mark[] {
+  let focal = false;
+  return accents.map((a) => {
+    if (a === undefined) return undefined;
+    if (a === 'red') return 'negative';
+    if (focal) return undefined;
+    focal = true;
+    return 'focal';
+  });
 }
+
 
 /**
  * Assigns each label a tier so no two labels on one tier overlap: sorted by
@@ -102,7 +115,7 @@ export function renderTiming(data: TimingData): string {
     return seen;
   });
   const allStates = lanes.flatMap((ln) => ln.states);
-  const marks = marksOf(allStates.map((st) => st.accent));
+  const marks = timingMarks(allStates.map((st) => st.accent));
 
   // Time domain from every time the block mentions.
   const times = [
@@ -223,9 +236,17 @@ export function renderTiming(data: TimingData): string {
       if (sg.mark === 'negative') anyNegative = true;
       if (sg.mark === 'focal') anyAccent = true;
       const cls = sg.mark === 'negative' ? ' c-negative' : sg.mark === 'focal' ? ' c-accent' : '';
-      const max = Math.floor((xb - xa - 6) / ARROW_CH);
-      const shown = cut(sg.st.state, max);
-      const title = shown !== sg.st.state ? `<title>${escapeHtml(sg.st.state)}</title>` : '';
+      // A segment too short for its state name shows it cut with "…" (the
+      // full name is its level's name at the left, and the hover title);
+      // too short for even two characters, it shows none. Nothing is lost,
+      // so the cut is not reported.
+      const room = xb - xa - 6;
+      const fit =
+        room >= 2 * ARROW_CH
+          ? ellipsize(sg.st.state, room, FONT.arrow)
+          : { lines: [], truncated: true, full: sg.st.state };
+      const shown = fit.lines[0] ?? '';
+      const title = cutTitle(fit);
       g +=
         `<g${bp(`lanes.${li}.states.${sg.si}`)}>` +
         (tone !== undefined ? `<line x1="${xa}" y1="${yy}" x2="${xb}" y2="${yy}" stroke="${tone}" stroke-width="2.25"/>` : '') +

@@ -16,17 +16,17 @@ groups:
   - { col: 3, row: 1, cols: 3, rows: 2, label: Orchestration }
 nodes:
   - { id: req, col: 1, row: 1, kind: start, label: Request }
-  - { id: guardin, col: 2, row: 1, kind: agent, label: "Guard agent\nclaude-haiku-4-5" }
+  - { id: guardin, col: 2, row: 1, kind: guard, label: "Guard agent\nclaude-haiku-4-5" }
   - { id: orch, col: 3, row: 1, kind: agent, label: "Orchestrator\nclaude-sonnet-4-6" }
   - { id: plan, col: 3, row: 2, kind: llm, label: "Planner\nclaude-sonnet-4-6" }
   - { id: worker, col: 4, row: 1, kind: llm, label: "Worker\nclaude-sonnet-4-6" }
   - { id: search, col: 4, row: 2, kind: tool, label: "Retrieve\ndocs + tickets" }
-  - { id: critic, col: 5, row: 1, kind: agent, label: "Critic agent\nclaude-opus-5" }
+  - { id: critic, col: 5, row: 1, kind: eval, label: "Critic agent\nclaude-opus-5" }
   - { id: mem, col: 5, row: 2, kind: memory, label: "Run memory\nplans · drafts · scores" }
   - { id: ok, col: 6, row: 1, kind: decision, label: Grounded and in policy? }
-  - { id: guardout, col: 6, row: 2, kind: agent, label: "Guard agent\noutput scan" }
-  - { id: human, col: 6, row: 3, kind: human, label: "Reviewer\nrefunds over $200" }
-  - { id: done, col: 7, row: 1, kind: end, label: Released }
+  - { id: guardout, col: 6, row: 2, kind: guard, label: "Guard agent\noutput scan" }
+  - { id: human, col: 5, row: 3, kind: human, label: "Reviewer\nrefunds over $200" }
+  - { id: done, col: 6, row: 3, kind: end, label: Released }
   - { id: reject, col: 2, row: 3, kind: end, label: Refused }
 edges:
   - req -> guardin

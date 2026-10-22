@@ -68,14 +68,15 @@ describe('grid groups on flow / dfd / state / c4', () => {
     ],
   ];
 
-  // The skinned renderers draw the paper-2 panel; a renderer that has not
-  // migrated keeps the dashed outline.
+  // The skinned renderers draw the panel — tinted in the group's hue, or
+  // `paper-2` when it has none; a renderer that has not migrated keeps the
+  // dashed outline.
   const SKINNED = new Set(['flow', 'dfd', 'state', 'c4']);
-  const SKIN_RECT = /<rect [^>]*fill="var\(--paper-2\)"[^>]*stroke="var\(--rule-solid\)"[^>]*\/>/;
+  const SKIN_RECT = /<rect [^>]*fill="var\(--(paper-2|hue-[a-z]+-tint)\)"[^>]*stroke="var\(--rule-solid\)"[^>]*\/>/;
   const groupRect = (kind: string): RegExp => (SKINNED.has(kind) ? SKIN_RECT : DASHED_RECT);
   const groupRectXY = (kind: string): RegExp =>
     SKINNED.has(kind)
-      ? /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" [^>]*fill="var\(--paper-2\)"[^>]*\/>/
+      ? /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" [^>]*fill="var\(--(?:paper-2|hue-[a-z]+-tint)\)"[^>]*\/>/
       : /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" [^>]*stroke-dasharray="7 5"\/>/;
 
   for (const [kind, html] of outputs) {
@@ -83,7 +84,7 @@ describe('grid groups on flow / dfd / state / c4', () => {
       expect(html, kind).toContain('data-bl="groups"');
       expect(html, kind).toContain('data-bp="groups.0"');
       expect(html, kind).toMatch(groupRect(kind));
-      expect(html, kind).toMatch(/class="(grp-label|t-eyebrow)"/);
+      expect(html, kind).toMatch(/class="(grp-label|t-eyebrow)( c-[a-z]+)?"/);
       expect(html, kind).toContain('>Zone A</text>');
       // Beneath: the groups layer appears before the first edge/node markup.
       expect(html.indexOf('data-bl="groups"'), kind).toBeLessThan(html.indexOf('data-bp="nodes.0"') === -1 ? html.indexOf('data-bp="states.0"') : html.indexOf('data-bp="nodes.0"'));
@@ -119,11 +120,13 @@ describe('grid groups on flow / dfd / state / c4', () => {
     });
     // Captured from the renderer BEFORE groups landed, updated deliberately
     // when the edges gained their `data-bl` list container (add-chips), again
-    // for the editorial skin, and again when the SVG gained its data-built
-    // accessible name — pads, geometry and layer set must not shift for
-    // documents that use no groups (declared nesting included).
+    // for the editorial skin, again when the SVG gained its data-built
+    // accessible name, again when edges moved to the shared router (a
+    // straight edge is now `M … L …`), and again when the stage gained its
+    // scale floor (`min-width`) — pads, geometry and layer set must not
+    // shift for documents that use no groups (declared nesting included).
     expect(html).toBe(
-      '<div class="diagram"><div class="diagram-head"><span class="diagram-eyebrow t-eyebrow"><span class="diagram-tag">FLOW</span></span></div><div class="diagram-stage"><svg viewBox="0 0 420 104" role="img" aria-label="Flowchart: 2 steps" data-grid="1" data-cols="2" data-rows="1" data-cell-w="160" data-cell-h="64" data-gap-x="56" data-gap-y="48" data-pad-x="22" data-pad-top="22" style="max-width:min(100%,calc(420px * var(--scale,1)))"><title>Flowchart: 2 steps</title><g data-bl="edges"><path d="M 177 54 H 210 V 54 H 243" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#skArrow)" data-bp="edges.0" data-reveal="1"/></g><g data-bl="nodes"><g data-bp="nodes.0" data-col="1" data-row="1" data-w="1" data-reveal="0"><rect x="27" y="28" width="150" height="52" rx="26" fill="var(--paper-2)" stroke="var(--rule-solid)" stroke-width="1"/><text x="102" y="58.5" class="fc-label t-name">Start</text></g><g data-bp="nodes.1" data-col="2" data-row="1" data-w="1" data-reveal="1"><rect x="243" y="28" width="150" height="52" rx="4" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/><text x="318" y="58.5" class="fc-label t-name">Work</text></g></g></svg></div><div class="diagram-legend"><span class="lg-title t-eyebrow">Legend</span><span class="lg-item"><svg class="lg-sw" viewBox="0 0 30 14" width="30" height="14" aria-hidden="true"><rect x="1" y="1" width="28" height="12" rx="2" fill="var(--paper-2)" stroke="var(--rule-solid)" stroke-width="1"/></svg><span class="lg-label">start</span></span><span class="lg-item"><svg class="lg-sw" viewBox="0 0 30 14" width="30" height="14" aria-hidden="true"><rect x="1" y="1" width="28" height="12" rx="2" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/></svg><span class="lg-label">step</span></span><span class="lg-item"><svg class="lg-sw" viewBox="0 0 30 14" width="30" height="14" aria-hidden="true"><line x1="1" y1="7" x2="23" y2="7" stroke="var(--muted)" stroke-width="1.5"/><path d="M23,4 L29,7 L23,10 z" fill="var(--muted)"/></svg><span class="lg-label">next</span></span></div></div>',
+      '<div class="diagram"><div class="diagram-head"><span class="diagram-eyebrow t-eyebrow"><span class="diagram-tag">FLOW</span></span></div><div class="diagram-stage"><svg viewBox="0 0 420 104" role="img" aria-label="Flowchart: 2 steps" data-grid="1" data-cols="2" data-rows="1" data-cell-w="160" data-cell-h="64" data-gap-x="56" data-gap-y="48" data-pad-x="22" data-pad-top="22" style="max-width:min(100%,calc(420px * var(--scale,1)));min-width:260px"><title>Flowchart: 2 steps</title><g data-bl="edges"><path d="M 177 54 L 243 54" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#skArrow)" data-bp="edges.0" data-reveal="1"/></g><g data-bl="nodes"><g data-bp="nodes.0" data-col="1" data-row="1" data-w="1" data-reveal="0"><rect x="27" y="28" width="150" height="52" rx="26" fill="var(--paper-2)" stroke="var(--rule-solid)" stroke-width="1"/><text x="102" y="58.5" class="fc-label t-name">Start</text></g><g data-bp="nodes.1" data-col="2" data-row="1" data-w="1" data-reveal="1"><rect x="243" y="28" width="150" height="52" rx="4" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/><text x="318" y="58.5" class="fc-label t-name">Work</text></g></g></svg></div><div class="diagram-legend"><span class="lg-title t-eyebrow">Legend</span><span class="lg-item"><svg class="lg-sw" viewBox="0 0 30 14" width="30" height="14" aria-hidden="true"><rect x="1" y="1" width="28" height="12" rx="2" fill="var(--paper-2)" stroke="var(--rule-solid)" stroke-width="1"/></svg><span class="lg-label">start</span></span><span class="lg-item"><svg class="lg-sw" viewBox="0 0 30 14" width="30" height="14" aria-hidden="true"><rect x="1" y="1" width="28" height="12" rx="2" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/></svg><span class="lg-label">step</span></span><span class="lg-item"><svg class="lg-sw" viewBox="0 0 30 14" width="30" height="14" aria-hidden="true"><line x1="1" y1="7" x2="23" y2="7" stroke="var(--muted)" stroke-width="1.5"/><path d="M23,4 L29,7 L23,10 z" fill="var(--muted)"/></svg><span class="lg-label">next</span></span></div></div>',
     );
   });
 });

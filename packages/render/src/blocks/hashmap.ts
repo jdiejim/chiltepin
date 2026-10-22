@@ -6,7 +6,9 @@
  * each bucket's entries chain rightward as rounded `key` / `key: value`
  * pills joined by small arrows, so collision chains read left → right. Empty
  * buckets show a dim "—". Entries whose `bucket` falls outside 0..N-1 are
- * skipped; rendering caps at 12 buckets with a "+N more" note. Entry tones
+ * named in a note; rendering caps at 12 buckets with a "+N more" note that
+ * counts the entries it does not draw. A pill grows to its `key: value` (up
+ * to a cap past which it is cut with "…" and a title). Entry tones
  * follow `svg/dsTone.ts`; the legend names the tones in play.
  */
 
@@ -15,6 +17,7 @@ import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { DS_TONE_LEGEND, dsTone, dsToneAttrs, type DsTone } from '../svg/dsTone.js';
+import { cutTitle, ellipsize, FONT, reportCut, textWidth, type Wrapped } from '../svg/wrapText.js';
 import { diagramFrame } from './frame.js';
 
 type HashmapData = BlockDataMap['hashmap'];
@@ -29,9 +32,16 @@ const PAD_X = 6;
 const MAX_BUCKETS = 12;
 const MIN_WIDTH = 320;
 
-/** Truncates a pill label to keep chains inside the frame. */
-function fit(text: string): string {
-  return text.length > 24 ? `${text.slice(0, 23)}…` : text;
+/** `.hsh-key` sets in 11px mono. */
+const PILL_FONT = FONT.code;
+/** Room a pill's text keeps from its sides. */
+const PILL_PAD = 18;
+/** The widest a pill grows; a longer `key: value` is cut with "…". */
+const MAX_PILL = 300;
+
+/** The pill's text, whole when it fits the widest pill, else cut with "…". */
+function fit(e: Entry): Wrapped {
+  return ellipsize(pillText(e), MAX_PILL - PILL_PAD, PILL_FONT);
 }
 
 function pillText(e: Entry): string {
@@ -55,12 +65,23 @@ export function renderHashmap(data: HashmapData): string {
     chains.set(b, chain);
   });
 
-  const noteH = overflow > 0 ? 20 : 0;
+  // Entries the drawing cannot place are named in a note, never dropped silently.
+  const hidden = entries.filter((e) => Math.floor(e.bucket) >= shown && Math.floor(e.bucket) < total).length;
+  const stray = entries.filter((e) => Math.floor(e.bucket) < 0 || Math.floor(e.bucket) >= total).length;
+  const notes: string[] = [];
+  if (overflow > 0) {
+    notes.push(
+      `+${overflow} more bucket${overflow === 1 ? '' : 's'}` +
+        (hidden > 0 ? ` (${hidden} entr${hidden === 1 ? 'y' : 'ies'} not drawn)` : ''),
+    );
+  }
+  if (stray > 0) notes.push(`${stray} entr${stray === 1 ? 'y' : 'ies'} outside buckets 0–${Math.max(0, total - 1)} not drawn`);
+  const noteH = notes.length * 20;
   const height = Math.max(shown, 1) * (ROW_H + GAP_Y) - (shown > 0 ? GAP_Y : 0) + 12 + noteH;
 
   // Pre-measure each chain to size the viewBox.
-  const pillW = (e: Entry): number => Math.max(34, Math.round(fit(pillText(e)).length * 6.6) + 18);
-  let width = MIN_WIDTH;
+  const pillW = (e: Entry): number => Math.max(34, Math.ceil(textWidth(fit(e).lines[0] ?? '', PILL_FONT)) + PILL_PAD);
+  let width = Math.max(MIN_WIDTH, ...notes.map((n) => Math.ceil(textWidth(n, FONT.sub)) + PAD_X * 2));
   for (let b = 0; b < shown; b += 1) {
     let x = PAD_X + IDX_W + LINK_W;
     for (const { e } of chains.get(b) ?? []) x += pillW(e) + LINK_W;
@@ -101,17 +122,28 @@ export function renderHashmap(data: HashmapData): string {
       else plain = true;
       s += `<g${bp(`entries.${idx}`)}>`;
       s += `<rect x="${x}" y="${cy - PILL_H / 2}" width="${w}" height="${PILL_H}" rx="4"${dsToneAttrs(t)}/>`;
-      s += `<text x="${x + w / 2}" y="${cy + 4}" class="hsh-key" fill="${t.text}">${escapeHtml(fit(pillText(e)))}</text>`;
+      const text = fit(e);
+      if (text.truncated) {
+        const keyCut = textWidth(`${e.key}: `, PILL_FONT) > MAX_PILL - PILL_PAD;
+        reportCut({
+          path: `entries.${idx}.${keyCut ? 'key' : 'value'}`,
+          ...(keyCut ? {} : { owner: e.key }),
+          field: keyCut ? 'key' : 'value',
+          full: keyCut ? e.key : (e.value ?? ''),
+          hint: keyCut ? 'Shorten the entry `key`.' : 'Shorten the entry `value`; put the full value in the prose.',
+        });
+      }
+      s += `<text x="${x + w / 2}" y="${cy + 4}" class="hsh-key" fill="${t.text}">${cutTitle(text)}${escapeHtml(text.lines[0] ?? '')}</text>`;
       s += `</g>`;
       x += w;
     });
   }
   s += `</g>`; // close the entries list container
 
-  if (overflow > 0) {
-    const y = 4 + shown * (ROW_H + GAP_Y) + 10;
-    s += `<text x="${PAD_X}" y="${y}" class="t-sub c-soft">+${overflow} more bucket${overflow === 1 ? '' : 's'}</text>`;
-  }
+  notes.forEach((note, i) => {
+    const y = 4 + shown * (ROW_H + GAP_Y) + 10 + i * 20;
+    s += `<text x="${PAD_X}" y="${y}" class="t-sub c-soft">${escapeHtml(note)}</text>`;
+  });
 
   s += `</svg>`;
 

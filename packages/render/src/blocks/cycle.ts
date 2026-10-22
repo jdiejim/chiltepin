@@ -14,7 +14,7 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { wrapText } from '../svg/wrapText.js';
+import { cutTitle, fitText, FONT, textWidth, type Wrapped } from '../svg/wrapText.js';
 import { edgeStep, stepsLegend } from '../svg/edgeSteps.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { bl, bp } from '../paths.js';
@@ -28,6 +28,13 @@ interface CycleStepNorm {
   readonly labelPath: string;
 }
 
+/** Wrap widths (px) a step label tries: from the floor, up to the cap for two lines, then three. */
+const WRAP_W_MIN = 100;
+const WRAP_W_2 = 140;
+const WRAP_W_3 = 180;
+/** The hub label's line width, px. */
+const HUB_W = 130;
+
 export function renderCycle(data: BlockDataMap['cycle']): string {
   const steps: CycleStepNorm[] = data.steps.map((s, i) =>
     typeof s === 'string'
@@ -36,19 +43,46 @@ export function renderCycle(data: BlockDataMap['cycle']): string {
   );
   const n = steps.length;
 
-  // Uniform pill size across the ring, sized by the longest wrapped line.
-  const lines = steps.map((s) => wrapText(s.label, 14, 2));
-  const maxChars = Math.max(1, ...lines.flat().map((ln) => ln.length));
-  const maxLines = Math.max(1, ...lines.map((ls) => ls.length));
-  const pillW = Math.min(150, Math.max(96, maxChars * 7 + 30));
+  // Uniform pill size across the ring: the narrowest wrap width at which
+  // every label fits in two lines (up to 170 wide), else three (up to 210),
+  // else four; the pill is then as wide as its longest line. Text that does
+  // not fit even then ends with "…" (full text in a <title>, and reported).
+  const fitsAt = (w: number, n: number): boolean =>
+    steps.every((st) => !fitText(st.label, { width: w, font: FONT.name, maxLines: n }).truncated);
+  const plan = ((): { wrapW: number; lines: number } => {
+    for (const [maxW, n] of [
+      [WRAP_W_2, 2],
+      [WRAP_W_3, 3],
+    ] as const) {
+      for (let w = WRAP_W_MIN; w <= maxW; w += 4) if (fitsAt(w, n)) return { wrapW: w, lines: n };
+    }
+    return { wrapW: WRAP_W_3, lines: 4 };
+  })();
+  const lines: Wrapped[] = steps.map((st) =>
+    fitText(st.label, {
+      width: plan.wrapW,
+      font: FONT.name,
+      maxLines: plan.lines,
+      report: { path: st.labelPath, field: 'label', hint: 'Shorten the step `label`; put the detail in `desc`.' },
+    }),
+  );
+  const widest = Math.max(1, ...lines.flatMap((w) => w.lines.map((ln) => textWidth(ln, FONT.name))));
+  const maxLines = Math.max(1, ...lines.map((w) => w.lines.length));
+  const pillW = Math.max(96, Math.ceil(widest + 30));
   const pillH = 34 + (maxLines - 1) * 14;
 
   // Ring radius: adjacent pill centers must clear a full pill width plus a
   // gap (chord = 2R·sin(π/n)); small n gets a readable floor.
   // A hub label needs the ring to clear it too: the widest hub line plus a
   // margin on each side of the side pills' inner edges.
-  const hub = data.center !== undefined && data.center.length > 0 ? wrapText(data.center, 18, 3) : [];
-  const hubW = Math.max(0, ...hub.map((ln) => ln.length)) * 7.2;
+  const hubText = fitText(data.center, {
+    width: HUB_W,
+    font: FONT.sub,
+    maxLines: 3,
+    report: { path: 'center', field: 'center', hint: 'Shorten `center` to a few words.' },
+  });
+  const hub = hubText.lines;
+  const hubW = Math.max(0, ...hub.map((ln) => textWidth(ln, FONT.sub)));
   const R = Math.max(
     96,
     Math.ceil((pillW + 40) / (2 * Math.sin(Math.PI / n))),
@@ -102,7 +136,7 @@ export function renderCycle(data: BlockDataMap['cycle']): string {
       hub
         .map(
           (ln, j) =>
-            `<text x="${c}" y="${c + 4 - (hub.length - 1) * 8 + j * 16}" class="t-sub" text-anchor="middle">${escapeHtml(ln)}</text>`,
+            `<text x="${c}" y="${c + 4 - (hub.length - 1) * 8 + j * 16}" class="t-sub" text-anchor="middle">${j === 0 ? cutTitle(hubText) : ''}${escapeHtml(ln)}</text>`,
         )
         .join('') +
       `</g>`;
@@ -111,7 +145,9 @@ export function renderCycle(data: BlockDataMap['cycle']): string {
   s += `<g${bl('steps')}>`;
   steps.forEach((st, i) => {
     const p = centerOf(i);
-    const ls = lines[i] ?? [];
+    const wrapped = lines[i];
+    const ls = wrapped?.lines ?? [];
+    const title = wrapped !== undefined ? cutTitle(wrapped) : '';
     const x = p.x - pillW / 2;
     const y = p.y - pillH / 2;
     // Bare-string steps already expose their whole scalar on the pill group —
@@ -119,12 +155,12 @@ export function renderCycle(data: BlockDataMap['cycle']): string {
     const wrapPath = st.labelPath === `steps.${i}` ? '' : bp(st.labelPath);
     const label =
       ls.length <= 1
-        ? `<text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" class="t-name" text-anchor="middle"${bp(st.labelPath)}>${escapeHtml(st.label)}</text>`
+        ? `<text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" class="t-name" text-anchor="middle"${bp(st.labelPath)}>${title}${escapeHtml(ls[0] ?? st.label)}</text>`
         : `<g${wrapPath}>` +
           ls
             .map(
               (ln, j) =>
-                `<text x="${p.x.toFixed(1)}" y="${(p.y + 4 - (ls.length - 1) * 7 + j * 14).toFixed(1)}" class="t-name" text-anchor="middle">${escapeHtml(ln)}</text>`,
+                `<text x="${p.x.toFixed(1)}" y="${(p.y + 4 - (ls.length - 1) * 7 + j * 14).toFixed(1)}" class="t-name" text-anchor="middle">${j === 0 ? title : ''}${escapeHtml(ln)}</text>`,
             )
             .join('') +
           `</g>`;

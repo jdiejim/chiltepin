@@ -4,6 +4,11 @@
  * - Ids are repo-global unique slugs. Duplicate ids produce `E_DUP_ID`.
  * - References are `doc#id` (absolute) or `#id` (within the current document).
  *   Targets that don't exist produce `E_DANGLING_REF`.
+ * - Prose links to another document (`[text](other-doc#anchor)`,
+ *   `[text](./other.md#anchor)`) must name a document in the set and, when
+ *   they carry an anchor, one of its block ids or heading ids. A miss is
+ *   `E_DANGLING_LINK`. Same-document links (`#anchor`) are checked per
+ *   document by `lintLocalLinks`.
  * - The {@link RefGraph} maps id → block and lists edges from referencing to
  *   referenced blocks.
  */
@@ -13,6 +18,7 @@ import type { Document, Segment, TypedSegment } from './types.js';
 import { blockRegistry } from './blocks/registry.js';
 import type { BlockDataMap } from './blocks/schemas.js';
 import type { BlockType } from './types.js';
+import { danglingLink, docAnchors, hasAnchor, proseLinks, resolveLinkTarget } from './links.js';
 
 /** A graph of resolved blocks and the edges between them. */
 export interface RefGraph {
@@ -117,6 +123,34 @@ export function resolveRefs(inputs: readonly InputDocument[]): {
         }
         const from = seg.id !== undefined ? `${doc.slug}#${seg.id}` : `${doc.slug}@${seg.line}`;
         edges.push({ from, to: `${targetDoc}#${targetId}` });
+      }
+    }
+  }
+
+  // Prose links to other documents. Anchors are computed once per target.
+  const bySlug = new Map(inputs.map((i) => [i.doc.slug, i.doc] as const));
+  const anchorCache = new Map<string, Set<string>>();
+  const anchorsOf = (slug: string): Set<string> => {
+    let a = anchorCache.get(slug);
+    if (a === undefined) {
+      const target = bySlug.get(slug);
+      a = target !== undefined ? docAnchors(target) : new Set();
+      anchorCache.set(slug, a);
+    }
+    return a;
+  };
+  for (const { doc, file } of inputs) {
+    for (const link of proseLinks(doc)) {
+      const target = resolveLinkTarget(link.href, doc.slug);
+      if (target === undefined || target.local) continue;
+      if (!bySlug.has(target.doc)) {
+        diagnostics.push(danglingLink(file, link, target, 'doc', [...bySlug.keys()]));
+        continue;
+      }
+      if (target.anchor === undefined) continue;
+      const anchors = anchorsOf(target.doc);
+      if (!hasAnchor(anchors, target.anchor)) {
+        diagnostics.push(danglingLink(file, link, target, 'anchor', [...anchors]));
       }
     }
   }

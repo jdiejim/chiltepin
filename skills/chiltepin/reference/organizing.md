@@ -10,7 +10,7 @@ a single file — or when you're deciding whether it has.
 | --- | --- |
 | `docs/` (or the configured `docsDir`) | All docs. One group level: `docs/<area>/<doc>.md`. Deeper nesting is drift. |
 | `dist/` (the build default) | Generated output. Never commit it. |
-| `.chiltepin/` | Tooling state — `skill/` is the authoring skill. |
+| `.claude/skills/chiltepin/` (or your agent's skill folder) | The authoring skill, installed with `npx skills add jdiejim/chiltepin`. Not a doc. |
 | `chiltepin.config.json` | Project config, at the root. |
 | `resources/` (or any folder outside `docsDir`) | Demo and fixture docs. Not part of the built site. |
 
@@ -23,7 +23,9 @@ name is not kebab-case or a doc sits deeper than one group level.
 
 Readers arrive with one of four needs, and a page that serves two of them
 serves neither (the Diátaxis split, used by Canonical, Python, and
-Cloudflare). Name the kind in `meta.tag` and keep each doc to one:
+Cloudflare). Keep each doc to one kind. `meta.tag` takes one list
+(`writing.md`): these four, plus `Design doc`, `ADR`, `Runbook`,
+`Postmortem`, and `Spec`.
 
 | Kind | Reader need | Typical blocks |
 | --- | --- | --- |
@@ -32,7 +34,7 @@ Cloudflare). Name the kind in `meta.tag` and keep each doc to one:
 | Reference | look a fact up | `endpoint`, `table`, `erd`, `spec`, `glossary` |
 | Explanation | understand why it is this way | `c4`, `sequence`, `options`, `scqa`, `timeline` |
 
-A runbook is a how-to. An architecture overview is an explanation. An API
+A runbook is a how-to with its own tag. An architecture overview is an explanation. An API
 doc is a reference; its "getting started" section is a tutorial and wants
 its own page once it passes three steps.
 
@@ -49,7 +51,7 @@ these hold; otherwise stay in one file — a 4-block doc doesn't need a folder.
   read at different speeds. A runbook buried in an architecture doc won't be
   found during the incident.
 - **The skim breaks.** If reading only the `##` headings no longer tells one
-  story (see move 2 in `SKILL.md`), the extra beats want their own doc.
+  story (step 2 of the loop in `SKILL.md`), the extra beats want their own doc.
 
 ## Slugs — the path *is* the reference prefix
 
@@ -79,40 +81,22 @@ natural home for ids that many docs reference.
 - Ids are **repo-global unique** — `id: seq-place-order` can exist once across
   the whole docs tree, so a ref always has exactly one target.
 - **Same doc → prefer `#id`** (survives file renames). Other doc →
-  `slug#id` (`payments/api#seq-charge`).
+  `slug#id` (`payments/api#seq-charge`). In prose, write a link:
+  `[the charge flow](payments/api#seq-charge)`.
 - Point stories at the diagrams that realize them
   (`userstory.links[].ref` / `stories.items[].links[].ref` — the ref-bearing
   fields), rather than redrawing the diagram in the second doc.
 - Draw each diagram in the doc that *owns* it; every other doc links. When a
   system changes, one block changes.
-- `chiltepin check` fails on dangling refs and duplicate ids across the whole set —
-  run it after any rename or move.
+- `chiltepin check` fails on dangling refs and links (`E_DANGLING_REF`,
+  `E_DANGLING_LINK`) and duplicate ids across the whole set — run it after
+  any rename or move.
 
-## How `chiltepin build` and `chiltepin studio` (Site mode) consume the set
+## How `chiltepin build` reads the set
 
-The layout above is exactly what the site generator reads:
-
-- **`chiltepin build`** renders every doc under the docs root into a static site.
-  `index.html` is a card grid built from each doc's `meta` (title · subtitle ·
-  tag — another reason `meta` is never optional). Each doc becomes
-  `<slug>.html` (folders keep their nesting), and a sidebar lists every doc
-  with the current doc's sections expanded.
-- **Refs become links.** A `userstory`/`stories` link chip navigates to its
-  target block — same page or `other-doc.html#id` across pages. A dangling ref
-  degrades to a plain chip (and `chiltepin check` will name it).
-- **`chiltepin studio` Site mode** is the authoring loop: the studio mounts the
-  same site from memory under `/site/…` and rebuilds + reloads it on every
-  save. Switch the top bar to Site to browse it while you edit.
-
-So the organizing rules pay rent twice: a tidy tree reads well in the repo
-*and* ships as a navigable site with no extra configuration.
-
-## Importing instead of transcribing
-
-When a doc's data-table already exists elsewhere, import it rather than
-retype it. `chiltepin sync csv <file>` turns a CSV export into a ready-made
-`table` / `statustable` / `chart` block (`--out docs/<slug>.md` wraps it in a
-new doc). `chiltepin sync openapi <spec> -o docs/api.md` generates a whole API
-doc — with `--check` keeping it drift-free in CI. The studio accepts the same
-files by drag-drop. The imported result is a normal doc on disk: edit it,
-ref it, `chiltepin check` it like anything hand-written.
+`chiltepin build` renders every doc under the docs root into a static site.
+`index.html` is a card grid from each doc's `meta` (title, subtitle, tag,
+status). Each doc becomes `<slug>.html`, folders keep their nesting, and
+links and refs become page links. `chiltepin studio` (Site mode) rebuilds
+the same site on every save. Import data instead of retyping it:
+`chiltepin sync csv` or `sync openapi` writes a normal doc you edit and check.

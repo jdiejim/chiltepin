@@ -8,8 +8,13 @@
  *
  * Lane order is the order branches are declared, else first appearance. A
  * commit on a branch nobody has seen yet OPENS that lane, forking from the
- * head of `from` (or of the lane before it), and `merge: <branch>` closes one
- * back into the branch the commit is on.
+ * head of `from` (or of the lane before it), and `merge: <branch>` draws the
+ * merge curve from that branch's last commit into the commit. A branch keeps
+ * its last commit after a merge, so merging it twice (a hotfix into `main`,
+ * then back into `develop`) draws both curves.
+ *
+ * The name gutter grows with the longest branch name, and two commits on one
+ * lane sit far enough apart that their labels and tags never touch.
  *
  * Skin (`DESIGN.md`): branch lines are `muted`; a merge is the dashed return
  * stroke; a revert is a hollow dot, a hotfix a dot with a paper core, a
@@ -27,11 +32,17 @@ import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 import { DECORATIVE } from '../svg/decorative.js';
+import { FONT, textWidth, type Font } from '../svg/wrapText.js';
 
 type GitData = BlockDataMap['gitgraph'];
 
-const LEFT = 104; // branch names live here
-const STEP = 96; // horizontal distance between commits
+const LEFT_MIN = 104; // branch names live here; grows with the longest name
+const STEP = 96; // horizontal distance between commits (the minimum)
+/** The type of a branch name (`.gg-branch`: 11px mono 700) and a commit label (`.gg-msg`: 11px Inter). */
+const BRANCH_FONT: Font = { size: 11, mono: true, weight: 700 };
+const MSG_FONT: Font = FONT.small;
+/** Clear space kept between two labels on one lane. */
+const LABEL_GAP = 12;
 const LANE = 62; // vertical distance between branches
 const TOP = 46; // room for the tag row
 const DOT = 6;
@@ -58,17 +69,29 @@ export function renderGitgraph(data: GitData): string {
   const colorOf = (branch: string): string => (isMain(branch) ? 'var(--accent)' : 'var(--muted)');
   const widthOf = (branch: string): number => (isMain(branch) ? 1.75 : 1.5);
   const laneY = (branch: string): number => TOP + Math.max(0, lanes.indexOf(branch)) * LANE;
+  // The name gutter fits the longest branch name (names end 26px left of the first commit).
+  const LEFT = Math.max(LEFT_MIN, Math.ceil(Math.max(0, ...lanes.map((n) => textWidth(n, BRANCH_FONT)))) + 26 + 14);
+  // The width a commit takes on its lane: its label, or its tag chip.
+  const footprint = (c: GitData['commits'][number]): number =>
+    Math.max(c.label !== undefined ? textWidth(c.label, MSG_FONT) : 0, c.tag !== undefined ? tagWidth(c.tag) : 0);
 
-  // Walk the sequence, placing each commit one step right of the last.
+  // Walk the sequence, placing each commit one step right of the last — or
+  // further, when the last commit on its own lane would touch its label.
   const heads = new Map<string, Point>();
+  const lastOnLane = new Map<string, { x: number; w: number }>();
   const placed: Array<{ p: Point; branch: string; index: number }> = [];
   const edges: string[] = [];
-  let column = 0;
+  let prevX = Number.NaN;
+  let right = 0;
   let merges = 0;
 
   data.commits.forEach((c, index) => {
     const branch = c.branch ?? lanes[0] ?? 'main';
-    const x = LEFT + column * STEP;
+    const w = footprint(c);
+    const prev = lastOnLane.get(branch);
+    const x = Number.isNaN(prevX)
+      ? LEFT
+      : Math.ceil(Math.max(prevX + STEP, prev !== undefined ? prev.x + (prev.w + w) / 2 + LABEL_GAP : 0));
     const y = laneY(branch);
     const point: Point = { x, y, lane: lanes.indexOf(branch) };
     const color = colorOf(branch);
@@ -87,21 +110,23 @@ export function renderGitgraph(data: GitData): string {
     }
 
     if (c.merge !== undefined) {
+      // The merged branch keeps its last commit: a second merge of the same
+      // branch (the back-merge of a hotfix) curves from that same point.
       const source = heads.get(c.merge);
-      if (source !== undefined) {
+      if (source !== undefined && c.merge !== branch) {
         edges.push(curve(source, point, colorOf(c.merge), widthOf(c.merge), true));
         merges += 1;
       }
-      // The merged branch's lane ends here.
-      heads.delete(c.merge);
     }
 
     heads.set(branch, point);
+    lastOnLane.set(branch, { x, w });
     placed.push({ p: point, branch, index });
-    column += 1;
+    prevX = x;
+    right = Math.max(right, x + w / 2);
   });
 
-  const width = LEFT + Math.max(1, column) * STEP;
+  const width = Math.ceil(Math.max(Number.isNaN(prevX) ? LEFT + STEP : prevX + STEP, right + LABEL_GAP));
   const height = TOP + lanes.length * LANE + 26;
 
   let s = `<svg viewBox="0 0 ${width} ${height}" role="img"><title>${escapeHtml(data.title ?? 'Branch graph')}</title>`;
@@ -139,7 +164,7 @@ export function renderGitgraph(data: GitData): string {
       s += `<text x="${p.x}" y="${p.y + 22}" class="gg-msg t-sub" text-anchor="middle">${escapeHtml(c.label)}</text>`;
     }
     if (c.tag !== undefined) {
-      const w = Math.max(34, c.tag.length * 6.5 + 14);
+      const w = tagWidth(c.tag);
       s += `<g>`;
       s += `<rect x="${p.x - w / 2}" y="${p.y - 40}" width="${w}" height="18" rx="2" fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/>`;
       s += `<text x="${p.x}" y="${p.y - 27.5}" class="t-badge c-ink" text-anchor="middle">${escapeHtml(c.tag)}</text>`;
@@ -167,6 +192,11 @@ export function renderGitgraph(data: GitData): string {
     },
     s,
   );
+}
+
+/** The width of a release tag chip. */
+function tagWidth(tag: string): number {
+  return Math.max(34, tag.length * 6.5 + 14);
 }
 
 /**

@@ -43,7 +43,7 @@ export const TERSE_HINTS: Partial<Record<BlockType, Readonly<Record<string, stri
     nodes: '`id: Label` — or a bare `Label`',
   },
   block: {
-    edges: '`from -> to: label` — `->` solid · `-->` dashed · `-x->` error',
+    edges: '`from -> to: label` — `->` solid · `-->` dashed · `-x->` error · a leading `3. ` sets `step`',
     nodes: '`id: Name` — or a bare `Name`',
   },
   state: {
@@ -240,6 +240,60 @@ function bodyLines(node: FieldNode, indent: string): string[] {
   return [`${indent}${inlineNode(node)}`];
 }
 
+/**
+ * The note on every `accent` field that takes the legacy colour names. The
+ * skin reads the name as a flag, not a colour (`DESIGN.md` › Two channels):
+ * one flagged item is the focus, `red` is the negative, and a flag on every
+ * item marks nothing. Authors who read the names as a palette paint every
+ * item, so the contract says it where they look.
+ */
+export const ACCENT_FIELD_NOTE =
+  'Not a colour. On exactly one item it marks the focus; `red` marks the bad item.';
+
+/** The note on a `statustable` status `color`: the names map onto pill styles, not hues. */
+export const STATUS_COLOR_NOTE =
+  'Not a hue: `green` (`success`) reads done, `amber` (`warn`) in progress, `red` (`error`) blocked, `gray` (`neutral`) to do; any other name draws an ink outline.';
+
+/** The legacy accent names; an enum holding all of them is an accent or status colour. */
+const ACCENT_NAMES: readonly string[] = ['navy', 'blue', 'teal', 'green', 'amber', 'purple', 'red', 'gray'];
+
+/** The derived note for an enum field whose options are the accent names, if any. */
+function accentNote(node: FieldNode, path: string): string | undefined {
+  if (node.kind !== 'enum' || !ACCENT_NAMES.every((n) => node.options.includes(n))) return undefined;
+  const field = path.slice(path.lastIndexOf('.') + 1);
+  if (field === 'accent') return ACCENT_FIELD_NOTE;
+  if (field === 'color' && node.options.includes('success')) return STATUS_COLOR_NOTE;
+  return undefined;
+}
+
+/**
+ * The schema's own field notes (`.describe('…')`), as `path → note`, with
+ * paths spelled the way an author writes them (`nodes[].kind`), plus the
+ * derived note on every accent-name enum ({@link ACCENT_FIELD_NOTE}). Fields
+ * that share one note are joined (`groups[].color, layers[].color`).
+ */
+function fieldNotes(root: FieldNode): Array<{ readonly fields: string; readonly note: string }> {
+  const found: Array<{ path: string; note: string }> = [];
+  const walk = (node: FieldNode, path: string): void => {
+    if (node.description !== undefined && path !== '') found.push({ path, note: node.description });
+    else if (path !== '') {
+      const derived = accentNote(node, path);
+      if (derived !== undefined) found.push({ path, note: derived });
+    }
+    if (node.kind === 'object') for (const f of node.fields) walk(f.node, path === '' ? f.name : `${path}.${f.name}`);
+    else if (node.kind === 'array') walk(node.element, `${path}[]`);
+    else if (node.kind === 'union') for (const arm of node.arms) walk(arm, path);
+  };
+  walk(root, '');
+  const byNote = new Map<string, string[]>();
+  for (const f of found) {
+    const paths = byNote.get(f.note) ?? [];
+    if (!paths.includes(f.path)) paths.push(f.path);
+    byNote.set(f.note, paths);
+  }
+  return [...byNote].map(([note, paths]) => ({ fields: paths.join(', '), note }));
+}
+
 /** The structured contract for one block type. */
 export interface BlockContract {
   readonly type: BlockType;
@@ -249,6 +303,8 @@ export interface BlockContract {
   readonly fields: readonly string[];
   /** Which of the common optional fields (`id`, `title`, …) this block accepts. */
   readonly common: readonly string[];
+  /** The schema's notes on free-string fields whose vocabulary the renderer owns. */
+  readonly notes: ReadonlyArray<{ readonly fields: string; readonly note: string }>;
   /** Terse spellings for list fields that have one: `field → grammar`. */
   readonly terse: ReadonlyArray<{ readonly field: string; readonly grammar: string }>;
   /** Old spellings that map to this block, with the patch they inject. */
@@ -293,6 +349,7 @@ export function blockContract(type: BlockType): BlockContract {
     description: BLOCK_DESCRIPTIONS[type],
     fields,
     common,
+    notes: fieldNotes(root),
     terse,
     aliases,
     ...(textBody !== undefined ? { textBody } : {}),
@@ -317,6 +374,11 @@ export function formatBlockContract(type: BlockType): string {
     out.push(
       `  bare text: a body with no \`field:\` lines is taken whole as \`${c.textBody}\` — no YAML quoting needed`,
     );
+  }
+  if (c.notes.length > 0) {
+    out.push('');
+    out.push('Field notes');
+    for (const n of c.notes) out.push(`  ${n.fields}: ${n.note}`);
   }
   if (c.terse.length > 0) {
     out.push('');

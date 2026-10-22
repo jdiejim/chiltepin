@@ -91,7 +91,7 @@ The [checkout example](./docs/examples/checkout-design.md) brings these figures 
 
 <p align="center"><sub><a href="./docs/examples/deployment-topology.md">Read the deployment source</a> · Includes a second view of the service on Kubernetes.</sub></p>
 
-More complete examples: [system context](./docs/examples/system-overview.md) · [API reference](./docs/examples/api.md) · [ADR](./docs/examples/adr.md) · [runbook](./docs/examples/runbook.md) · [agent system](./docs/systems/agent-system.md) · [slide deck](./docs/examples/presentation.md).
+More complete examples: [system design](./docs/examples/system-design.md) · [C4 model](./docs/examples/c4-model.md) · [use cases](./docs/examples/use-cases.md) · [system context](./docs/examples/system-overview.md) · [API reference](./docs/examples/api.md) · [ADR](./docs/examples/adr.md) · [runbook](./docs/examples/runbook.md) · [agent system](./docs/systems/agent-system.md) · [slide deck](./docs/examples/presentation.md).
 
 ## Small source. Finished figures.
 
@@ -167,7 +167,9 @@ See the [getting started guide](./docs/guides/getting-started.md) for the full w
 | A document to send | `chiltepin html docs/design.md` | A standalone page with inline CSS and SVG |
 | A design review deck | `chiltepin slides docs/design.md` | A self-contained slide deck organized by headings |
 | A printable handoff | `chiltepin pdf docs/design.md` | A PDF; Chromium downloads once on first use |
-| A documentation site | `chiltepin build` | A static site with navigation and cross-document links |
+| A review before handoff | `chiltepin review docs/design.md` | Every check finding plus what the reader sees in each block (cut text, overlaps, fit, phone, print), one line per issue with its fix, and a contact sheet of every block |
+| Images to review or paste | `chiltepin shots docs/design.md` | One PNG per diagram, with a note when a drawing scrolls or shrinks on the page |
+| A documentation site | `chiltepin build` | A static site with navigation by folder and tag, search, heading anchors, and working links between documents |
 | A place to edit | `chiltepin studio` | A local visual editor for the same Markdown files |
 
 Dark by default. Set `"colorScheme": "light"` or `"system"` in `chiltepin.config.json` to change the page appearance. Print and PDF use the light palette.
@@ -209,14 +211,15 @@ Put the CLI in your project's development dependencies, then add this step after
   run: npx --no-install chiltepin check
 ```
 
-`chiltepin check` validates the configured docs directory. It catches invalid fields, duplicate IDs, and broken references across documents. Errors fail the command.
+`chiltepin check` validates the configured docs directory. It catches invalid fields, duplicate IDs, and broken references and links across documents. Errors fail the command.
 
 ```bash
 chiltepin check --json          # diagnostics for tooling and agents
 chiltepin check --strict-prose  # also fail on prose warnings
+chiltepin review docs/design.md # what the reader sees, block by block (exit 1 on cut or overlapping text)
 ```
 
-Density and style warnings flag crowded diagrams and unclear prose. Validation checks structure and references; it cannot verify your system's technical facts.
+Warnings flag crowded or too-wide diagrams, unconnected nodes, duplicate edges, unlabelled decision branches, placeholder names, unedited template text, and unclear prose. Validation checks structure and references; it cannot verify your system's technical facts.
 
 ## Pick the block that answers the question
 
@@ -244,7 +247,7 @@ Run `chiltepin block` to browse the catalog, or `chiltepin demo architecture` to
 | Events & messaging | `block` (`preset: event`) `eventcontract` `saga` — 12 patterns in the skill |
 | API reference | `endpoint` `eventcontract` `packet` `code` |
 | Quality, audits, performance | `audit` `checklist` `perfbudget` `percentiles` `threatmodel` `slo` `benchmark` `risk` |
-| Charts | `chart` (bar · line · area · scatter · donut · pie · gauge · radar · waterfall · funnel · pareto · histogram · bell · boxplot · bullet) `heatmap` `sankey` `treemap` `slopegraph` `quadrant` |
+| Charts | `chart` (bar · line · area · scatter · donut · pie · gauge · radar · waterfall · funnel · pareto · histogram · bell · boxplot · bullet · dumbbell) `heatmap` `sankey` `treemap` `slopegraph` `quadrant` |
 | Decks & decisions | `scqa` `takeaways` `bignumber` `options` `harvey` `scorecard` `scenarios` `chevrons` `roadmap` `swot` `okr` `wardley` |
 | Planning | `userstory` `storymap` `kanban` `timeline` `gantt` `rollout` `changelog` `statustable` `agenda` |
 | Design systems | `wireframe` `palette` `typescale` `dodont` `inventory` `frontend` `felogic` |
@@ -263,12 +266,14 @@ Typed blocks across 13 families. Every field, enum, and terse form: `chiltepin b
 |---|---|
 | `chiltepin init` | Scaffold `chiltepin.config.json` + two starter docs (`--force` overwrites) |
 | `chiltepin new [name]` | Scaffold a whole doc (`adr`, `runbook`, …) or one block |
-| `chiltepin check [globs]` | Validate — schemas, refs, ids, density, prose, lens lints (`--json`) |
+| `chiltepin check [globs]` | Validate — schemas, refs, links, ids, density, fit, graph, prose, lens lints (`--json`) |
+| `chiltepin review <file>` | Check one doc and look at every block as the reader sees it: fit, cut, overlap, tiny, print; writes a contact sheet and `review.json` (`-o`, `--json`; exit 1 on an error) |
 | `chiltepin block [type]` | The reference: every type on one line, or one type's contract (`--json`) |
 | `chiltepin demo [family] [-s]` | Render the built-in showcase — every block, or one family (`-s` slides) |
 | `chiltepin html / slides / pdf <in>` | Render one doc (`-p` opens, `-o` writes) |
+| `chiltepin shots <in>` | One PNG per diagram, with a fit note (`-o`, `--json`) |
 | `chiltepin <file.md>` | Render and open one doc |
-| `chiltepin build` | Static site from all docs (`--out`) |
+| `chiltepin build` | Static site from all docs: shared CSS, search, images copied (`--out`) |
 | `chiltepin studio` | The local editor (`--port`, `--no-open`) |
 | `chiltepin audit [path]` | Audit a codebase and recommend which docs to write, with evidence |
 | `chiltepin sync openapi\|csv\|sql\|dbml\|prisma <file>` | Generate blocks or docs from an OpenAPI spec, a CSV, or a schema |

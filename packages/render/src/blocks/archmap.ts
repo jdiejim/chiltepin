@@ -1,18 +1,23 @@
 /**
  * Renders an `archmap` block — a target-architecture capability map: the
- * classic enterprise-architecture one-pager. A square mosaic of tinted domain
- * areas (accent wash + uppercase kicker label + optional desc), each packed
- * with small capability/system tiles. Tiles are status-coded: a plain string
- * is a current capability (white), `target` is to-be-built (dashed navy on
- * light blue), `new` is just added (green), `gap` is missing (dashed red),
- * `deprecated` is retiring (grayed out). A compact legend below the mosaic
- * shows only the statuses actually used. Empty areas render as just the
- * tinted region with its label.
+ * classic enterprise-architecture one-pager. A square mosaic of domain areas
+ * (uppercase kicker label + optional desc), each packed with small
+ * capability/system tiles. An area's `accent` names its category hue: the
+ * panel takes the `--hue-*-tint` wash and the label the hue, as grid group
+ * panels do (`gray`, or no accent, keeps the neutral panel). Tiles are
+ * status-coded by stroke and word: a plain string is a current capability,
+ * `target` is to-be-built (dashed), `new` is just added (heavier outline),
+ * `gap` is missing (dashed + `GAP` chip), `deprecated` is retiring (struck
+ * through on the inactive fill + `RETIRING` chip), so target and deprecated
+ * never read alike. A compact legend below the mosaic shows only the
+ * statuses actually used. Empty areas render as just the panel with its
+ * label.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
+import type { Hue } from '../svg/hues.js';
 
 type ArchmapData = BlockDataMap['archmap'];
 type ArchmapArea = ArchmapData['areas'][number];
@@ -42,16 +47,43 @@ function nameOf(item: ArchmapItem): string {
   return typeof item === 'string' ? item : item.name;
 }
 
+/**
+ * The category hue an area's legacy `accent` name maps to. `gray` (and no
+ * accent) keeps the neutral panel; `red` is a category here, never an error,
+ * so it takes `rose`.
+ */
+const AREA_HUE: Readonly<Record<NonNullable<ArchmapArea['accent']>, Hue | undefined>> = {
+  navy: 'blue',
+  blue: 'blue',
+  teal: 'teal',
+  green: 'green',
+  amber: 'amber',
+  purple: 'violet',
+  red: 'rose',
+  gray: undefined,
+};
+
+/** The hue of an area, or `undefined` for the neutral panel. */
+export function areaHue(accent: ArchmapArea['accent']): Hue | undefined {
+  return accent !== undefined ? AREA_HUE[accent] : undefined;
+}
+
+/** The word chip a status carries on its tile (and in the legend). */
+const STATUS_CHIP: Partial<Record<TileStatus, string>> = { gap: 'Gap', deprecated: 'Retiring' };
+
 function renderTile(item: ArchmapItem, path: string): string {
   const status = statusOf(item);
   const statusClass = status === 'current' ? '' : ` am-t-${status}`;
-  // A gap is a missing capability, not an error: dashed outline plus a word chip.
-  const chip = status === 'gap' ? `<span class="t-eyebrow am-chip">Gap</span>` : '';
-  return `<div class="am-tile${statusClass}"${bp(path)}>${escapeHtml(nameOf(item))}${chip}</div>`;
+  // A gap is a missing capability, not an error: dashed outline plus a word
+  // chip. A retiring tile is struck through and says so in its chip.
+  const word = STATUS_CHIP[status];
+  const chip = word !== undefined ? `<span class="t-eyebrow am-chip">${word}</span>` : '';
+  return `<div class="am-tile${statusClass}"${bp(path)}><span class="am-name">${escapeHtml(nameOf(item))}</span>${chip}</div>`;
 }
 
 function renderArea(area: ArchmapArea, ai: number): string {
-  const accent = area.accent !== undefined ? ` am-${area.accent}` : '';
+  const hue = areaHue(area.accent);
+  const accent = hue !== undefined ? ` am-hue-${hue}` : '';
   const desc =
     area.desc !== undefined
       ? `<div class="am-area-desc"${bp(`areas.${ai}.desc`)}>${escapeHtml(area.desc)}</div>`
@@ -86,9 +118,10 @@ function renderLegend(areas: ArchmapData['areas']): string {
   if (present.length < 2) return '';
   const items = present
     .map((s) => {
+      const word = STATUS_CHIP[s];
       const sw =
-        s === 'gap'
-          ? `<span class="lg-chip t-eyebrow">Gap</span>`
+        word !== undefined
+          ? `<span class="lg-chip t-eyebrow">${word}</span>`
           : `<span class="lg-sw am-sw am-sw-${s}"></span>`;
       return `<span class="lg-item">${sw}<span class="lg-label">${STATUS_LABEL[s]}</span></span>`;
     })

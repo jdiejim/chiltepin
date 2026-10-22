@@ -2,33 +2,73 @@
  * Series and tone palette — the one place a chart may spend colour, and the
  * tone vocabulary of the algorithms & data-structures family.
  *
- * The skin (`DESIGN.md`) spends one accent per diagram. Charts are the
- * exception: a chart with 2–5 series needs a series ramp. That ramp lives in
- * CSS custom properties (`--series-1` … `--series-5`, defined in `css.ts`),
- * and this file carries their fallbacks — the ONLY hex values a chart renderer
- * touches — so the no-hex test keeps this file on its allowlist and nothing
- * else.
+ * Charts use the skin's two channels (`DESIGN.md`): a series is a category,
+ * so it takes a category hue (`--hue-*`, `svg/hues.ts`), and the accent stays
+ * the one focal mark. Every hue clears 4.5:1 on paper in both themes, so a
+ * series colour also works as text.
  *
  * Three vocabularies:
  *
- * - {@link seriesColor}: the series ramp (`ink` alone, the ramp for 2–5 series,
- *   `negative` for a series the author marked `accent: red`).
- * - {@link inkTone}: the ink ramp (`ink` → `muted` → `soft` → `rule-solid` →
- *   `paper-2`) for donut / funnel / waterfall / gauge, where the parts of one
- *   whole are told apart by tone, plus a `dark` flag that says whether text
- *   on that step is `paper` or `ink`.
+ * - {@link seriesStyle} / {@link seriesColor}: `ink` for one series; the six
+ *   hues in rotation for several; past six, the hues repeat with a dash and a
+ *   marker shape, so no two series look the same. `negative` for a series the
+ *   author marked `accent: red`.
+ * - {@link marksOf}: what an item's legacy `accent` name means (focal,
+ *   negative, or nothing).
  * - {@link dsTone}: the `array` / `linkedlist` / `bintree` / `hashmap` states.
  */
 
-/**
- * Fallbacks for `--series-N` — desaturated, every step ≥ 3:1 against
- * `paper-2` in light mode. `css.ts` defines the properties themselves (and
- * their dark-mode values); these only apply when a host stylesheet lacks them.
- */
-const SERIES_FALLBACK: readonly string[] = ['#3d4656', '#8a5a3c', '#5f7f6e', '#6b6f9c', '#8a7a48'];
+import { HUES } from './hues.js';
 
-/** How many distinct series steps the ramp has before it cycles. */
-const SERIES_STEPS = SERIES_FALLBACK.length;
+/** How many distinct hues a series rotation has before it adds a dash. */
+export const SERIES_HUES = HUES.length;
+
+/** A marker shape for a line series; the shape changes with each rotation past six. */
+export type SeriesMarker = 'circle' | 'square' | 'diamond';
+
+/** How one series draws: its colour, a tint for a hollow fill, and the variation past six series. */
+export interface SeriesStyle {
+  /** Stroke and fill token. */
+  readonly color: string;
+  /** The opaque tint of the same hue — the fill of a hollow (second-rotation) bar. */
+  readonly tint: string;
+  /** 0 for the first six series, 1 for series 7–12, and so on. */
+  readonly round: number;
+  /** `stroke-dasharray` for a line, `''` when solid. */
+  readonly dash: string;
+  /** The vertex marker for a line. */
+  readonly marker: SeriesMarker;
+}
+
+const DASHES: readonly string[] = ['', '6 3', '2 3'];
+const MARKERS: readonly SeriesMarker[] = ['circle', 'square', 'diamond'];
+
+/**
+ * The style of series `i` (0-based) in a chart of `count` series.
+ *
+ * - One series: `ink` — nothing to tell apart, so nothing is coloured.
+ * - Several: the category hues in {@link HUES} order. Past six, the hues
+ *   repeat, but each rotation adds a dash pattern and a marker shape (and a
+ *   bar draws hollow), so a colour never repeats silently.
+ * - `accent: red` on a series is the author saying "this one is the bad one":
+ *   it takes `negative`. Every other legacy accent name is ignored — the skin
+ *   (not the author) picks hues.
+ */
+export function seriesStyle(i: number, count: number, accent?: string | undefined): SeriesStyle {
+  const k = ((i % SERIES_HUES) + SERIES_HUES) % SERIES_HUES;
+  const round = Math.max(0, Math.floor(i / SERIES_HUES));
+  const dash = DASHES[round % DASHES.length] ?? '';
+  const marker = MARKERS[round % MARKERS.length] ?? 'circle';
+  if (accent === 'red') return { color: 'var(--negative)', tint: 'var(--negative-tint)', round, dash, marker };
+  if (count <= 1) return { color: 'var(--ink)', tint: 'var(--paper-2)', round: 0, dash: '', marker: 'circle' };
+  const hue = HUES[k] ?? 'blue';
+  return { color: `var(--hue-${hue})`, tint: `var(--hue-${hue}-tint)`, round, dash, marker };
+}
+
+/** The colour of series `i` (0-based) in a chart of `count` series — see {@link seriesStyle}. */
+export function seriesColor(i: number, count: number, accent?: string | undefined): string {
+  return seriesStyle(i, count, accent).color;
+}
 
 /**
  * Label colours for a swatch whose fill is author DATA (the `palette` block):
@@ -36,49 +76,6 @@ const SERIES_STEPS = SERIES_FALLBACK.length;
  * be a theme token. The fallback swatch stands in for an unsafe colour value.
  */
 export const SWATCH_TEXT = { dark: '#1f2937', light: '#ffffff', fallback: '#d1d5db' } as const;
-
-/**
- * The colour of series `i` (0-based) in a chart of `count` series.
- *
- * - One series: `ink` — nothing to tell apart, so nothing is coloured.
- * - Several: `var(--series-N)` with its fallback, cycling past five.
- * - `accent: red` on a series is the author saying "this one is the bad one":
- *   it takes `negative`. Every other legacy accent name is ignored — the ramp
- *   is assigned in series order, so the skin (not the author) picks hues.
- */
-export function seriesColor(i: number, count: number, accent?: string | undefined): string {
-  if (accent === 'red') return 'var(--negative)';
-  if (count <= 1) return 'var(--ink)';
-  const step = ((i % SERIES_STEPS) + SERIES_STEPS) % SERIES_STEPS;
-  return `var(--series-${step + 1}, ${SERIES_FALLBACK[step] ?? ''})`;
-}
-
-/** One step of the ink ramp: fill, the stroke that keeps a pale step visible, and whether text on it is paper. */
-export interface InkTone {
-  readonly fill: string;
-  readonly stroke: string;
-  /** True when the step is dark enough that text on it must be `paper`. */
-  readonly dark: boolean;
-}
-
-const INK: InkTone = { fill: 'var(--ink)', stroke: 'var(--ink)', dark: true };
-const INK_2: InkTone = { fill: 'var(--ink-2)', stroke: 'var(--ink-2)', dark: true };
-const INK_3: InkTone = { fill: 'var(--ink-3)', stroke: 'var(--ink-3)', dark: false };
-const MUTED: InkTone = { fill: 'var(--muted)', stroke: 'var(--muted)', dark: true };
-const PAPER_2: InkTone = { fill: 'var(--paper-2)', stroke: 'var(--ink)', dark: false };
-
-/** Walked in order (funnel bands, waterfall bars): ink → ink-2 → ink-3 → paper-2. */
-const INK_RAMP: readonly InkTone[] = [INK, INK_2, INK_3, PAPER_2];
-
-/**
- * For slices that touch (donut, gauge rings): neighbours are always at least
- * two ramp steps apart — ink / ink-3 / muted / paper-2 — so two small
- * adjacent slices never read as one grey.
- */
-const SLICE_ORDER: readonly InkTone[] = [INK, INK_3, MUTED, PAPER_2];
-
-/** How many distinct steps the ink ramp has before it cycles. */
-const INK_STEPS = INK_RAMP.length;
 
 /** What an item's legacy `accent` name means under the skin — see {@link marksOf}. */
 export type Mark = 'focal' | 'negative' | undefined;
@@ -92,25 +89,6 @@ export type Mark = 'focal' | 'negative' | undefined;
 export function marksOf(accents: ReadonlyArray<string | undefined>): Mark[] {
   const flagged = accents.filter((a) => a !== undefined && a !== 'red').length;
   return accents.map((a) => (a === 'red' ? 'negative' : a !== undefined && flagged === 1 ? 'focal' : undefined));
-}
-
-/**
- * The ink-ramp step for slice / band / bar `i` — `ink` first, paling with
- * the index. A `negative` mark gives `negative`; a `focal` mark gives
- * `accent`. Text on an accent or negative fill is `paper`.
- */
-export function inkTone(i: number, mark?: Mark): InkTone {
-  if (mark === 'negative') return { fill: 'var(--negative)', stroke: 'var(--negative)', dark: true };
-  if (mark === 'focal') return { fill: 'var(--accent)', stroke: 'var(--accent)', dark: true };
-  const step = ((i % INK_STEPS) + INK_STEPS) % INK_STEPS;
-  return INK_RAMP[step] ?? INK;
-}
-
-/** The slice tone for slice `i` — {@link SLICE_ORDER}, with the same marks as {@link inkTone}. */
-export function sliceTone(i: number, mark?: Mark): InkTone {
-  if (mark !== undefined) return inkTone(i, mark);
-  const n = SLICE_ORDER.length;
-  return SLICE_ORDER[((i % n) + n) % n] ?? INK;
 }
 
 /** The tone names shared by the data-structure blocks. */

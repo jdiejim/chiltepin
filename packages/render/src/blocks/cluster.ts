@@ -16,10 +16,12 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { edgeLanes, entryPortOffsets, ortho } from '../svg/ortho.js';
-import { edgeLabelLayer, type EdgeLabelPoint } from '../svg/edgeSteps.js';
+import { layoutEdges } from '../svg/edgeLayout.js';
+import { LABEL_RUN, labelBox } from '../svg/edgeSteps.js';
+import { geometryOf, type GeometryReport } from '../svg/geometry.js';
 import { SKIN_EDGE } from '../svg/blockStyle.js';
-import { blockLegend, renderShapedNode, edgeAnchorRect } from './blockGraph.js';
+import { blockLegend, renderShapedNode, edgeAnchorRect, growCells, shapedLabelDeficit } from './blockGraph.js';
+import { cutTitle, ellipsize, FONT, textWidth } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 
@@ -27,7 +29,20 @@ type Service = NonNullable<BlockDataMap['cluster']['services']>[number];
 
 const CYLINDER_KINDS = new Set(['db', 'database', 'store', 'warehouse', 'lake', 'postgres', 'mysql', 'mongo', 'mongodb', 'dynamo']);
 
+/** The widest a namespace panel grows to fit its label; a longer label is cut. */
+const MAX_PANEL_W = 420;
+
 export function renderCluster(data: BlockDataMap['cluster']): string {
+  return layoutCluster(data).html;
+}
+
+/** Geometry report for a `cluster` block (see `geometryReport`). */
+export function clusterGeometry(data: BlockDataMap['cluster']): GeometryReport {
+  return layoutCluster(data).geometry;
+}
+
+/** Lays out and draws a `cluster` block: the framed HTML plus its geometry report. */
+function layoutCluster(data: BlockDataMap['cluster']): { html: string; geometry: GeometryReport } {
   const clusters = data.clusters ?? [];
   const services = data.services ?? [];
   const edges = data.edges ?? [];
@@ -38,12 +53,29 @@ export function renderCluster(data: BlockDataMap['cluster']): string {
     if (list !== undefined) list.push(sv);
   }
   const serviceW = 158;
-  const serviceH = 78;
-  const gapS = 22;
+  // The replica marks take a strip at the bottom of a service; the label keeps clear of it.
+  const reserveOf = (sv: Service): number =>
+    (sv.replicas ?? 0) > 0 ? (CYLINDER_KINDS.has((sv.kind ?? '').toLowerCase()) ? 26 : 17) : 0;
+  // One service height: tall enough for every service's whole name and tech, up to a cap.
+  const serviceH = growCells(78, 134, (h) =>
+    Math.max(
+      0,
+      ...services.map((sv) =>
+        shapedLabelDeficit(
+          { kind: sv.kind, name: sv.label, tech: sv.tech, reserveBottom: reserveOf(sv) },
+          { x: 0, y: 0, w: serviceW, h },
+        ),
+      ),
+    ),
+  );
+  // Services and namespaces sit apart enough for the widest edge label to
+  // sit on its edge between them.
+  const widest = Math.max(0, ...edges.map((e) => (e.label !== undefined && e.label !== '' ? labelBox(e.label).w : 0)));
+  const gapS = Math.max(22, widest > 0 ? widest + LABEL_RUN : 0);
   const cPadX = 24;
   const cHeader = 34;
   const cPadBot = 22;
-  const cGap = 34;
+  const cGap = Math.max(34, widest > 0 ? widest + LABEL_RUN : 0);
   const outerPad = 26;
 
   interface Rect {
@@ -70,14 +102,16 @@ export function renderCluster(data: BlockDataMap['cluster']): string {
     const list = svcByCluster.get(c.id) ?? [];
     const colsC = Math.min(2, Math.max(1, list.length));
     const rowsC = Math.max(1, Math.ceil(list.length / colsC));
-    const w = colsC * serviceW + (colsC - 1) * gapS + cPadX * 2;
+    // Wide enough for the namespace label and its kind chip on one line.
+    const headW = textWidth(c.label, FONT.eyebrow) + (c.kind !== undefined ? textWidth(c.kind, FONT.eyebrow) + 16 : 0) + 24;
+    const w = Math.max(colsC * serviceW + (colsC - 1) * gapS + cPadX * 2, Math.min(Math.ceil(headW), MAX_PANEL_W));
     const h = cHeader + rowsC * serviceH + (rowsC - 1) * gapS + cPadBot;
     clusterBoxes.push({ c, x, y: outerPad, w, h });
     list.forEach((sv, i) => {
       const row = Math.floor(i / colsC);
       const col = i % colsC;
       rects.set(sv.id, {
-        x: x + cPadX + col * (serviceW + gapS),
+        x: x + cPadX + (w - (colsC * serviceW + (colsC - 1) * gapS + cPadX * 2)) / 2 + col * (serviceW + gapS),
         y: outerPad + cHeader + row * (serviceH + gapS),
         w: serviceW,
         h: serviceH,
@@ -95,49 +129,56 @@ export function renderCluster(data: BlockDataMap['cluster']): string {
   // eyebrow label top-left and the kind chip top-right.
   s += `<g${bl('clusters')}>`;
   clusterBoxes.forEach((cb, ci) => {
+    const kindW = cb.c.kind !== undefined ? textWidth(cb.c.kind, FONT.eyebrow) + 16 : 0;
     const kindLabel =
       cb.c.kind !== undefined
         ? `<text x="${cb.x + cb.w - 12}" y="${cb.y + 16}" class="t-eyebrow" text-anchor="end">${escapeHtml(cb.c.kind)}</text>`
         : '';
+    // A label longer than the widest panel is cut with "…" (full text in the title).
+    const label = ellipsize(cb.c.label, cb.w - 24 - kindW, FONT.eyebrow, {
+      path: `clusters.${ci}.label`,
+      field: 'label',
+      hint: 'Shorten the namespace `label`.',
+    });
     s +=
       `<g${bp(`clusters.${ci}`)}>` +
       `<rect x="${cb.x}" y="${cb.y}" width="${cb.w}" height="${cb.h}" rx="6" fill="var(--paper-2)" fill-opacity="0.6" stroke="var(--rule-solid)" stroke-width="1"/>` +
-      `<text x="${cb.x + 12}" y="${cb.y + 16}" class="t-eyebrow">${escapeHtml(cb.c.label)}</text>` +
+      `<text x="${cb.x + 12}" y="${cb.y + 16}" class="t-eyebrow">${cutTitle(label)}${escapeHtml(label.lines[0] ?? '')}</text>` +
       kindLabel +
       `</g>`;
   });
   s += `</g>`; // close the clusters list container
 
-  // edges
-  const pending: EdgeLabelPoint[] = [];
+  // edges — routed around every service, off the namespace borders, each
+  // label on its own edge.
   const edgeKinds = new Set<string>();
   s += `<g${bl('edges')}>`;
-  const lanes = edgeLanes(edges);
   // Arrows meet the shape a kind draws (a gateway's bar, a cloud's outline),
   // not the cell around it.
   const kindOf = new Map(services.map((sv) => [sv.id, sv.kind]));
-  const anchor = (id: string): Rect | undefined => {
-    const r = rects.get(id);
-    return r === undefined ? undefined : edgeAnchorRect(kindOf.get(id), r);
-  };
-  const entries = entryPortOffsets(edges, anchor);
+  const nameOf = new Map(services.map((sv) => [sv.id, sv.label]));
+  const styleOf = (e: (typeof edges)[number]): { stroke: string; sw: number; dash: string; marker: string; err: boolean } =>
+    SKIN_EDGE[e.kind ?? 'solid'] ??
+    SKIN_EDGE['solid'] ?? { stroke: 'var(--muted)', sw: 1.5, dash: '', marker: 'skArrow', err: false };
+  const bounds = { x: 0, y: 0, w: width, h: height };
+  const { routes, labels } = layoutEdges(
+    [...rects.entries()].map(([id, r]) => ({ id, box: edgeAnchorRect(kindOf.get(id), r, undefined, nameOf.get(id)), obstacle: r })),
+    edges,
+    edges.map((e, ei) => ({ label: e.label, err: styleOf(e).err, path: `edges.${ei}` })),
+    {
+      dir: 'LR',
+      bounds,
+      obstacles: clusterBoxes.map((cb) => ({ x: cb.x + 10, y: cb.y + 5, w: Math.min(Math.ceil(textWidth(cb.c.label, FONT.eyebrow)) + 4, cb.w - 20), h: 13 })),
+      rails: clusterBoxes.map((cb) => ({ x: cb.x, y: cb.y, w: cb.w, h: cb.h })),
+    },
+  );
   edges.forEach((e, ei) => {
-    const A = anchor(e.from);
-    const B = anchor(e.to);
-    if (!A || !B) return;
-    const p = ortho(A, B, lanes[ei] ?? 0, entries[ei] ?? 0);
-    const kind = e.kind ?? 'solid';
-    edgeKinds.add(kind);
-    const st = SKIN_EDGE[kind] ?? SKIN_EDGE['solid'] ?? {
-      stroke: 'var(--muted)',
-      sw: 1.5,
-      dash: '',
-      marker: 'skArrow',
-      err: false,
-    };
+    const p = routes[ei];
+    if (p === undefined) return;
+    edgeKinds.add(e.kind ?? 'solid');
+    const st = styleOf(e);
     const dash = st.dash.length > 0 ? ` stroke-dasharray="${st.dash}"` : '';
     s += `<path d="${p.d}" fill="none" stroke="${st.stroke}" stroke-width="${st.sw}"${dash} marker-end="url(#${st.marker})"${bp(`edges.${ei}`)}/>`;
-    pending.push({ lx: p.lx, ly: p.ly, ...(e.label !== undefined ? { label: e.label } : {}), err: st.err, path: `edges.${ei}` });
   });
   s += `</g>`; // close the edges list container
 
@@ -167,7 +208,13 @@ export function renderCluster(data: BlockDataMap['cluster']): string {
         `</g>`;
     }
     const node = renderShapedNode(
-      { kind: sv.kind, name: sv.label, ...(sv.tech !== undefined ? { tech: sv.tech } : {}) },
+      {
+        kind: sv.kind,
+        name: sv.label,
+        ...(sv.tech !== undefined ? { tech: sv.tech } : {}),
+        path: `services.${si}`,
+        reserveBottom: reserveOf(sv),
+      },
       r,
       undefined,
       sv.id === accentId,
@@ -176,12 +223,25 @@ export function renderCluster(data: BlockDataMap['cluster']): string {
   });
   s += `</g>`; // close the services list container
 
-  const { overlay, legend: steps } = edgeLabelLayer(pending, [...rects.values()], { skin: true });
-  s += overlay; // labels on top, never crossed by a line
+  s += labels.overlay; // labels on top, never crossed by a line
   s += `</svg>`;
+  const steps = labels.legend;
+  const geometry = geometryOf({
+    nodeWord: 'service',
+    edgeWord: 'edge',
+    nodes: services.map((sv, si) => ({ id: sv.id, name: sv.label, path: `services.${si}` })),
+    edges: edges.map((e, ei) => ({ from: e.from, to: e.to, label: e.label, path: `edges.${ei}` })),
+    routes,
+    fallbacks: labels.fallbackIndex,
+    labelBoxes: labels.boxes,
+    nodeBoxes: [...rects.values()],
+    quick: false,
+    dir: 'LR',
+    cells: false,
+  });
 
   const legend = blockLegend(services, edgeKinds, accentId !== undefined);
-  return diagramFrame(
+  const html = diagramFrame(
     {
       tag: 'CLUSTER',
       ...(data.title !== undefined ? { title: data.title } : {}),
@@ -190,4 +250,5 @@ export function renderCluster(data: BlockDataMap['cluster']): string {
     },
     s + steps,
   );
+  return { html, geometry };
 }

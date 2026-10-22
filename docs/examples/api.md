@@ -33,7 +33,7 @@ id: seq-orders
 actors:
   - { id: client, name: Client }
   - { id: api, name: Orders API }
-  - { id: db, name: Database }
+  - { id: db, name: orders-db }
 messages:
   - { from: client, to: api, label: POST /orders, kind: sync }
   - { from: api, to: db, label: INSERT order }

@@ -1,31 +1,28 @@
 # Chiltepin blocks — AI & agents
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Structure & emphasis — four fixed frames for one LLM agent: the
 loop (`agentloop`), one real episode (`trace`), the contract (`prompt`), and
-the window budget (`context`).
-**Answers**: What does the loop do? What can it call? What is the model
-told? What fills the window? What did a real run look like?
-They compose — the AI / agent recipe in `reference/recipes.md` stacks all
-four.
-**Not this family**: an AI *workflow* — a RAG pipeline, a router, agents
-handing off, a generate → check → repair loop → `flow` (flows.md) with
-`kind: agent / llm / tool / human / memory`; each ask gets its own shape,
-never the fixed agentloop frame. Several owners per step → `swimlane`; the
-deployment around it → `block` (`kind: llm` / `agent`); an improve-and-
-re-evaluate cycle → `cycle`; one turn's timing → `sequence`.
+the window budget (`context`). Each needs real material: a transcript, a
+prompt, or measured token counts.
+**Answers**: What does one agent's loop do? What is the model told? What
+fills the window? What did a real run look like?
+**Not this family**: an AI *system* — RAG, a router, agents handing off,
+planner and workers, generate → check → repair, a guard, a human gate.
+Build it from the AI kit in `reference/kit.md`. Control → `flow` with
+`kind: agent / llm / tool / memory / guard / eval / human`; deployment →
+`block` with the same kinds; several owners → `swimlane`.
 
 ### AI & agents
 
 #### `agentloop` — the canonical agent-loop diagram
-Environment left, agent card centre, tools stacked right, a memory cylinder
-below. Answers: what does one loop turn do, and what can the agent call?
-The four numbered arrows are fixed (prompt → tool call → result → response).
-List only tools the agent can call; the render shows 5 and folds the rest.
-The memory cylinder draws only when `memory:` is present.
+A fixed picture: environment, one agent card, its tools, its memory.
+`kit.md` says when to choose it. The four numbered arrows are fixed
+(prompt → tool call → result → response). List only tools the agent can
+call; the render shows 5 and folds the rest.
 `agentloop` for the loop itself; `block` for the deployment around it.
 
 #### `trace` — an agent / session execution transcript

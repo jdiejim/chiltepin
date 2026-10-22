@@ -17,12 +17,15 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { edgeLanes, entryPortOffsets, ortho } from '../svg/ortho.js';
-import { wrapText } from '../svg/wrapText.js';
-import { dodge, type AvoidRect } from '../svg/edgeSteps.js';
-import { GROUP_PADS, gridGroupsSvg, groupExtent, nestingPads } from '../svg/gridGroups.js';
+import { moveOffLabels, routeEdges, type RoutedEdge } from '../svg/router.js';
+import { outline } from '../svg/edgeLayout.js';
+import { gapsForLabels, geometryOf, routeMidpoint, type GeometryReport } from '../svg/geometry.js';
+import { textWidth, FONT } from '../svg/wrapText.js';
+import { dfdNameLines, dfdNameSvg } from './dfd.js';
+import { dodge, placeOnRoutes, type AvoidRect, type RouteBoxSpot } from '../svg/edgeSteps.js';
+import { GROUP_PADS, gridGroupsSvg, groupExtent, groupLabelBoxes, groupPanelRects, nestingPads } from '../svg/gridGroups.js';
 import { gridMetaAttrs, nodeCellAttrs } from '../svg/gridMeta.js';
-import { dfdChip, dfdKindOf, dfdName, dfdPaint, dfdShape, type DfdKind } from '../svg/dfdShapes.js';
+import { dfdChip, dfdKindOf, dfdPaint, dfdShape, type DfdKind } from '../svg/dfdShapes.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
 import { bl, bp } from '../paths.js';
@@ -43,8 +46,6 @@ export const STRIDE: Readonly<Record<Threat['category'], string>> = {
   E: 'Elevation of privilege',
 };
 
-/** Approximate width of one `.t-arrow` character (9.5px mono). */
-const ARROW_CH = 6;
 /** The lock glyph's footprint (width) at the head of a `tls` label. */
 const LOCK_W = 11;
 /** The `PLAIN` chip's footprint after a `plain` label. */
@@ -77,7 +78,7 @@ function channelLabel(lx: number, ly: number, label: string, ch: Channel, w: num
   const cls = ch === 'plain' ? ' c-negative' : '';
   let s = `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="var(--paper)"/>`;
   const lockW = ch === 'tls' ? LOCK_W : 0;
-  const textW = label !== '' ? label.length * ARROW_CH : 0;
+  const textW = label !== '' ? textWidth(label, FONT.arrow) : 0;
   const tx = lx - (lockW + textW) / 2;
   const ty = y0 + 11.5;
   if (ch === 'tls') s += lockGlyph(tx, ty - 8.5);
@@ -94,7 +95,7 @@ function channelLabel(lx: number, ly: number, label: string, ch: Channel, w: num
 
 /** The label's mask width: the wider of the text line and the chip. */
 function labelWidth(label: string, ch: Channel): number {
-  const line = (ch === 'tls' ? LOCK_W : 0) + (label !== '' ? label.length * ARROW_CH : 0);
+  const line = (ch === 'tls' ? LOCK_W : 0) + (label !== '' ? textWidth(label, FONT.arrow) : 0);
   return 6 + Math.max(line, ch === 'plain' ? CHIP_W : 0);
 }
 
@@ -142,16 +143,27 @@ function threatsTable(threats: readonly Threat[], nameOf: (id: string) => string
 }
 
 export function renderThreatmodel(data: ThreatData): string {
+  return layoutThreatmodel(data).html;
+}
+
+/** Geometry report for a `threatmodel` block (see `geometryReport`). */
+export function threatmodelGeometry(data: ThreatData): GeometryReport {
+  return layoutThreatmodel(data).geometry;
+}
+
+/** Lays out and draws a `threatmodel` block: the framed HTML plus its geometry report. */
+function layoutThreatmodel(data: ThreatData): { html: string; geometry: GeometryReport } {
   const edges = data.edges ?? [];
   const rawNodes = data.nodes;
+  const dir = data.dir ?? 'LR';
   const quick = !(rawNodes.length > 0 && rawNodes.every((n) => n.col !== undefined && n.row !== undefined));
-  const nodes = ensureGrid(rawNodes, edges, data.dir ?? 'LR');
+  const nodes = ensureGrid(rawNodes, edges, dir);
   const cellW = 148;
-  const nameLines = nodes.map((n) => wrapText(n.name, 20, 3));
-  const maxLines = Math.max(1, ...nameLines.map((ls) => ls.length));
-  const cellH = 66 + (maxLines - 1) * 14;
-  const gapX = 104;
-  const gapY = 54;
+  // Names wrap as in `dfd` (identifier-aware, ≤4 lines); the cell grows per line.
+  const { lines: nameLines, cellH } = dfdNameLines(nodes.map((n) => n.name));
+  // One column gap and one row gap, wide enough for every channel label.
+  const cellOf = (id: string): (typeof nodes)[number] | undefined => nodes.find((n) => n.id === id);
+  const { gapX, gapY } = gapsForLabels(edges, cellOf, dir, { gapX: 104, gapY: 54 });
   const groups = data.boundaries ?? [];
   const nestPad = nestingPads(groups);
   const padX = (groups.length > 0 ? GROUP_PADS.padX : 26) + nestPad.padX;
@@ -180,41 +192,79 @@ export function renderThreatmodel(data: ThreatData): string {
   if (groups.length > 0) {
     // The shared group painter names its list `groups`; here the field is
     // `boundaries`, so Studio's add chips and click mapping must see that.
-    const painted = gridGroupsSvg(groups, { xOf, yOf, cellW, cellH, gapX, gapY, skin: true })
+    const painted = gridGroupsSvg(groups, { xOf, yOf, cellW, cellH, gapX, gapY, skin: true, autoHue: false })
       .replace(/data-bl="groups"/g, 'data-bl="boundaries"')
       .replace(/data-bp="groups\./g, 'data-bp="boundaries.');
     s += `<g class="tm-bounds">${painted}</g>`;
   }
 
   const channelsUsed = new Set<Channel>();
-  const lanes = edgeLanes(edges);
-  const entries = entryPortOffsets(edges, (id) => {
-    const n = byId.get(id);
-    return n !== undefined ? rectFor(n) : undefined;
-  });
-  const labels: string[] = [];
+  // Every hop is routed around the nodes, off the boundary borders; its
+  // channel label sits on it, and no other hop runs under that label.
+  const bounds = { x: 0, y: 0, w: width, h: height };
   const avoid: AvoidRect[] = nodes.map((n) => rectFor(n));
+  const geo = { xOf, yOf, cellW, cellH, gapX, gapY };
+  const tabs = groupLabelBoxes(groups, geo);
+  const panels = groupPanelRects(groups, geo);
+  const first = routeEdges(
+    nodes.map((n) => ({ id: n.id, box: rectFor(n), radius: dfdKindOf(n.kind) === 'process' ? 16 : 0 })),
+    edges,
+    { dir, bounds, obstacles: tabs, rails: panels },
+  );
+  const labelOf = (e: (typeof edges)[number]): { text: string; ch: Channel } | undefined => {
+    const ch = channelOf(e.channel);
+    const text = e.label ?? '';
+    return text === '' && ch !== 'tls' && ch !== 'plain' ? undefined : { text, ch };
+  };
+  const place = (routes: ReadonlyArray<RoutedEdge | undefined>): Array<RouteBoxSpot | undefined> =>
+    placeOnRoutes(
+      edges.map((e, ei) => {
+        const l = labelOf(e);
+        const r = routes[ei];
+        if (l === undefined || r === undefined) return undefined;
+        return { points: r.points, ...routeMidpoint(r.points), sizes: [{ w: labelWidth(l.text, l.ch), h: labelHeight(l.ch) }] };
+      }),
+      avoid,
+      { bounds, routes: [...routes.map((r) => r?.points), ...panels.map(outline)] },
+    );
+  let spots = place(first);
+  const routes = moveOffLabels(
+    first,
+    spots.flatMap((sp, ei) => (sp === undefined ? [] : [{ box: sp.box, edge: ei }])),
+    [...avoid, ...tabs],
+    bounds,
+    undefined,
+    false,
+  );
+  spots = place(routes);
+  const labels: string[] = [];
+  const fallbacks: number[] = [];
+  const taken: AvoidRect[] = [...avoid, ...spots.flatMap((sp) => (sp === undefined ? [] : [sp.box]))];
   s += `<g${bl('edges')}>`;
   edges.forEach((e, ei) => {
-    const A = byId.get(e.from);
-    const B = byId.get(e.to);
-    if (!A || !B) return;
+    const p = routes[ei];
+    if (p === undefined) return;
     const ch = channelOf(e.channel);
     channelsUsed.add(ch);
-    const p = ortho(rectFor(A), rectFor(B), lanes[ei] ?? 0, entries[ei] ?? 0);
     const plain = ch === 'plain';
     const stroke = plain ? 'var(--negative)' : 'var(--muted)';
     const dash = plain ? ' stroke-dasharray="4 3"' : '';
     const marker = plain ? 'skErr' : 'skArrow';
     s += `<path d="${p.d}" fill="none" stroke="${stroke}" stroke-width="1.5"${dash} marker-end="url(#${marker})"${bp(`edges.${ei}`)}${plain ? ' data-channel="plain"' : ''}/>`;
-    const label = e.label ?? '';
-    if (label === '' && ch !== 'tls' && ch !== 'plain') return;
-    const w = labelWidth(label, ch);
-    // The label keeps clear of every node and of every label placed before it.
-    const at = dodge(p.lx, p.ly, avoid);
-    const h = labelHeight(ch);
-    avoid.push({ x: at.lx - w / 2, y: at.ly - h / 2, w, h });
-    labels.push(`<g${bp(`edges.${ei}`)}>${channelLabel(at.lx, at.ly, label, ch, w)}</g>`);
+    const l = labelOf(e);
+    if (l === undefined) return;
+    const w = labelWidth(l.text, l.ch);
+    let at: { lx: number; ly: number } | undefined = spots[ei];
+    if (at === undefined) {
+      // No clear spot on the hop: the label keeps clear of every node and
+      // label at its route's midpoint instead (reported as a geometry issue).
+      const mid = routeMidpoint(p.points);
+      at = dodge(mid.lx, mid.ly, taken);
+      const h = labelHeight(l.ch);
+      taken.push({ x: at.lx - w / 2, y: at.ly - h / 2, w, h });
+      fallbacks.push(ei);
+    }
+    labels.push(`<g${bp(`edges.${ei}`)}>${channelLabel(at.lx, at.ly, l.text, l.ch, w)}</g>`);
   });
   s += `</g>`;
 
@@ -225,12 +275,24 @@ export function renderThreatmodel(data: ThreatData): string {
     const k = dfdKindOf(n.kind);
     kindsUsed.add(k);
     const paint = dfdPaint(k, false);
-    const name = dfdName(nameLines[ni] ?? [], n.name, r, false, `nodes.${ni}.name`);
+    const name = dfdNameSvg(nameLines[ni] ?? { lines: [], truncated: false, full: '' }, n.name, r, false, `nodes.${ni}.name`);
     s += `<g${bp(`nodes.${ni}`)}${nodeCellAttrs(n.col, n.row)}>${dfdShape(k, r, paint)}${dfdChip(r, paint)}${name}</g>`;
   });
   s += `</g>`;
   s += labels.join(''); // labels on top, never crossed by a line
   s += `</svg>`;
+  const geometry = geometryOf({
+    nodeWord: 'node',
+    edgeWord: 'flow',
+    nodes: nodes.map((n, ni) => ({ id: n.id, name: n.name, path: `nodes.${ni}`, col: n.col, row: n.row })),
+    edges: edges.map((e, ei) => ({ from: e.from, to: e.to, label: e.label, path: `edges.${ei}` })),
+    routes,
+    fallbacks,
+    labelBoxes: spots.flatMap((sp) => (sp === undefined ? [] : [sp.box])),
+    nodeBoxes: avoid,
+    quick,
+    dir,
+  });
 
   const items: LegendItem[] = [];
   if (kindsUsed.has('process')) items.push({ swatch: 'node', label: 'process' });
@@ -244,7 +306,7 @@ export function renderThreatmodel(data: ThreatData): string {
   const legend = renderLegend(items);
   const table = threatsTable(data.threats ?? [], (id) => byId.get(id)?.name);
 
-  return diagramFrame(
+  const html = diagramFrame(
     {
       tag: 'THREAT MODEL',
       ...(data.title !== undefined ? { title: data.title } : {}),
@@ -254,4 +316,5 @@ export function renderThreatmodel(data: ThreatData): string {
     },
     s,
   );
+  return { html, geometry };
 }

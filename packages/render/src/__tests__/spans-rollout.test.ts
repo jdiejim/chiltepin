@@ -88,7 +88,7 @@ describe('spans', () => {
   });
 
   it('draws one parent → child connector per child span', () => {
-    expect(parse(renderSpans(TRACE)).querySelectorAll('line.sp-link')).toHaveLength(5);
+    expect(parse(renderSpans(TRACE)).querySelectorAll('path.sp-link')).toHaveLength(5);
   });
 
   it('labels every bar with its duration in the unit, and every name survives', () => {

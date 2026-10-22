@@ -63,7 +63,7 @@ describe('grid auto-layout direction', () => {
     expect(renderFlow({ ...placed, dir: 'LR' })).toBe(renderFlow(placed));
   });
 
-  it('c4 quick mode is horizontal too, and takes `dir: TB`', () => {
+  it('c4 quick mode puts the people on top, and takes `dir: LR`', () => {
     const c4 = {
       nodes: [
         { id: 'user', kind: 'person' as const, name: 'Analyst' },
@@ -77,10 +77,11 @@ describe('grid auto-layout direction', () => {
         { from: 'api', to: 'db' },
       ],
     };
-    const wide = box(renderC4(c4));
-    const tall = box(renderC4({ ...c4, dir: 'TB' }));
-    expect(wide.w).toBeGreaterThan(wide.h);
+    // A C4 diagram reads from the people down: a chain stacks top to bottom.
+    const tall = box(renderC4(c4));
+    const wide = box(renderC4({ ...c4, dir: 'LR' }));
     expect(tall.h).toBeGreaterThan(tall.w);
+    expect(wide.w).toBeGreaterThan(wide.h);
   });
 
   it('state and dfd keep their left-to-right default and accept `dir`', () => {

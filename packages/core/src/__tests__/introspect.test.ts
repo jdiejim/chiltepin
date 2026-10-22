@@ -176,6 +176,7 @@ describe('describeBlockSchema', () => {
         'boxplot',
         'pareto',
         'bullet',
+        'dumbbell',
       ],
     });
     const preset = field(describeBlockSchema('block'), 'preset');

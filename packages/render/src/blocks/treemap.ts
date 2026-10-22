@@ -24,7 +24,7 @@ import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { marksOf } from '../svg/dsTone.js';
-import { wrapText } from '../svg/wrapText.js';
+import { ellipsize, fitText, FONT, reportCut, splitIdentifier, textWidth, type Wrapped } from '../svg/wrapText.js';
 import { diagramFrame } from './frame.js';
 
 type TreemapData = BlockDataMap['treemap'];
@@ -33,6 +33,15 @@ type Item = TreemapData['items'][number];
 const W = 880;
 const H = 400;
 const PAD = 3; // gutter between tiles
+/** A tile's text sits this far in from its left edge. */
+const INSET = 9;
+const NAME_LH = 15;
+const DESC_LH = 13;
+/** Text keeps this far off a tile's bottom edge. */
+const BOTTOM = 6;
+/** The key under the drawing: one row per numbered tile. */
+const KEY_TOP = 16;
+const KEY_ROW_H = 18;
 
 interface Tile {
   readonly item: Item;
@@ -129,10 +138,11 @@ export function renderTreemap(data: TreemapData): string {
     .sort((a, b) => b.item.value - a.item.value);
 
   const total = ordered.reduce((a, e) => a + e.item.value, 0);
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img"><title>${escapeHtml(data.title ?? 'Treemap')}</title>`;
+  const open = (height: number): string =>
+    `<svg viewBox="0 0 ${W} ${height}" role="img"><title>${escapeHtml(data.title ?? 'Treemap')}</title>`;
 
   if (ordered.length === 0 || total <= 0) {
-    s += `<rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="var(--paper)" stroke="var(--rule-solid)"/></svg>`;
+    const s = open(H) + `<rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="var(--paper)" stroke="var(--rule-solid)"/></svg>`;
     return frame(data, s, '');
   }
 
@@ -156,6 +166,20 @@ export function renderTreemap(data: TreemapData): string {
   };
   const used = new Set<Tone>();
 
+  // Plan each tile's text first: the tiles that cannot show their name and
+  // value take a number, and the key under the drawing lists them in full.
+  const plans = tiles.map((t) => planTile(t));
+  const numbered = new Map<number, number>();
+  plans.forEach((p, i) => {
+    if (p.keyed) numbered.set(i, numbered.size + 1);
+  });
+  const zero = data.items.map((item, index) => ({ item, index })).filter((e) => !(e.item.value > 0));
+  const key = keyLayout([
+    ...[...numbered.entries()].map(([i, n]) => ({ badge: String(n), text: keyText(tiles[i]?.item, data.unit, total), index: tiles[i]?.index ?? 0 })),
+    ...zero.map((e) => ({ badge: '–', text: `${e.item.label} · ${fmt(e.item.value, data.unit)} · not drawn (no area)`, index: e.index })),
+  ]);
+  let s = open(H + (key.rows > 0 ? KEY_TOP + key.rows * KEY_ROW_H - 2 : 0));
+
   s += `<g${bl('items')}>`;
   tiles.forEach((t, i) => {
     const x = t.x + PAD / 2;
@@ -163,9 +187,10 @@ export function renderTreemap(data: TreemapData): string {
     const w = Math.max(0, t.w - PAD);
     const h = Math.max(0, t.h - PAD);
     if (w < 2 || h < 2) return;
+    const plan = plans[i] as TilePlan;
     const tone = toneOf(t, i);
     used.add(tone);
-    const share = Math.round((t.item.value / total) * 100);
+    const share = shareText(t.item.value, total);
     const nameCls = tone === 'accent' ? 't-name c-accent' : tone === 'negative' ? 't-name c-negative' : 't-name';
     s += `<g${bp(`items.${t.index}`)}>`;
     // A tint is translucent: paint paper under it so the dot grid stays out.
@@ -173,26 +198,40 @@ export function renderTreemap(data: TreemapData): string {
       s += `<rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" rx="3" fill="var(--paper)"/>`;
     }
     s += `<rect x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" rx="3" ${TONE_ATTRS[tone]}/>`;
-    // Text only where it fits — a 13px line needs room, and a half-clipped
-    // label reads worse than a tile that lets its tooltip do the talking.
-    if (w >= 58 && h >= 30) {
-      const chars = Math.max(6, Math.floor(w / 7.4));
-      const lines = wrapText(t.item.label, chars, h >= 58 ? 2 : 1);
-      lines.forEach((line, li) => {
-        s += `<text x="${r(x + 9)}" y="${r(y + 20 + li * 15)}" class="${nameCls}">${escapeHtml(line)}</text>`;
-      });
-      const below = y + 20 + lines.length * 15;
-      if (h >= 48) {
-        s += `<text x="${r(x + 9)}" y="${r(below + 1)}" class="t-sub c-muted">${escapeHtml(fmt(t.item.value, data.unit))} · ${share}%</text>`;
-      }
-      if (t.item.desc !== undefined && h >= 74) {
-        s += `<text x="${r(x + 9)}" y="${r(below + 16)}" class="t-sub c-soft">${escapeHtml(t.item.desc)}</text>`;
-      }
+    plan.name.lines.forEach((line, li) => {
+      s += `<text x="${r(x + INSET)}" y="${r(y + 20 + li * NAME_LH)}" class="${nameCls}">${escapeHtml(line)}</text>`;
+    });
+    const below = y + 20 + plan.name.lines.length * NAME_LH;
+    if (plan.value) {
+      s += `<text x="${r(x + INSET)}" y="${r(below + 1)}" class="t-sub c-muted">${escapeHtml(fmt(t.item.value, data.unit))} · ${escapeHtml(share)}</text>`;
     }
-    s += `<title>${escapeHtml(`${t.item.label}: ${fmt(t.item.value, data.unit)} (${share}%)`)}</title>`;
+    plan.desc.lines.forEach((line, li) => {
+      s += `<text x="${r(x + INSET)}" y="${r(below + 16 + li * DESC_LH)}" class="t-sub c-soft">${escapeHtml(line)}</text>`;
+    });
+    // A numbered tile: the number in its top corner (when the tile can hold one).
+    const n = numbered.get(i);
+    if (n !== undefined && w >= 14 && h >= 14) {
+      const bx = plan.name.lines.length > 0 ? x + w - 8 : x + Math.min(INSET, w / 2);
+      const anchor = plan.name.lines.length > 0 ? ' text-anchor="end"' : w < 2 * INSET + 6 ? ' text-anchor="middle"' : '';
+      s += `<text x="${r(plan.name.lines.length > 0 || w >= 2 * INSET + 6 ? bx : x + w / 2)}" y="${r(y + Math.min(17, h / 2 + 4))}" class="t-badge c-ink"${anchor}>${n}</text>`;
+    }
+    const descPart = t.item.desc !== undefined && t.item.desc !== '' ? ` — ${t.item.desc}` : '';
+    s += `<title>${escapeHtml(`${t.item.label}: ${fmt(t.item.value, data.unit)} (${share})${descPart}`)}</title>`;
     s += `</g>`;
+    for (const [field, w2] of [['label', plan.name], ['desc', plan.desc]] as const) {
+      if (!w2.truncated || plan.keyed) continue;
+      reportCut({
+        path: `items.${t.index}.${field}`,
+        ...(field === 'desc' ? { owner: t.item.label } : {}),
+        field,
+        full: w2.full,
+        hint: field === 'label' ? 'Shorten the item `label`.' : 'Shorten the item `desc`.',
+      });
+    }
   });
-  s += `</g></svg>`;
+  s += `</g>`;
+  s += keySvg(key, H + KEY_TOP);
+  s += `</svg>`;
 
   const items: LegendItem[] = [];
   if (used.has('plain')) items.push({ swatch: 'node', label: 'item (area = value)' });
@@ -215,4 +254,103 @@ function frame(data: TreemapData, inner: string, legendHtml: string): string {
     },
     inner,
   );
+}
+
+/** How one tile shows its text. */
+interface TilePlan {
+  readonly name: Wrapped;
+  /** The `value · share` line shows. */
+  readonly value: boolean;
+  readonly desc: Wrapped;
+  /** The tile takes a number and a key entry (its text does not all fit). */
+  readonly keyed: boolean;
+}
+
+const NONE: Wrapped = { lines: [], truncated: false, full: '' };
+
+/** True when every word of `text` fits `width` whole (or at its identifier joints). */
+function wordsFit(text: string, width: number): boolean {
+  return text
+    .split(/\s+/)
+    .filter((wd) => wd !== '')
+    .every((wd) => textWidth(wd, FONT.name) <= width || splitIdentifier(wd).every((p) => p.length > 1 && textWidth(p, FONT.name) <= width));
+}
+
+/**
+ * Plans a tile's text: the name (wrapped, up to five lines), the value line,
+ * then the description in the rest. A tile too small for its name and value
+ * shows a number instead, and the key lists it; a description with no line
+ * left also sends the tile to the key. A name or description that fits only
+ * in part ends with "…" (reported as a cut).
+ */
+function planTile(t: Tile): TilePlan {
+  const w = Math.max(0, t.w - PAD);
+  const h = Math.max(0, t.h - PAD);
+  const room = w - INSET * 2;
+  const bottom = h - BOTTOM;
+  // Name line k sits at 20 + 15k; the value line one line under the last.
+  const nameRoom = Math.min(5, Math.floor((bottom - 21) / NAME_LH));
+  if (room < 40 || nameRoom < 1) return { name: NONE, value: false, desc: NONE, keyed: true };
+  const label = t.item.label;
+  let name = fitText(label, { width: room, font: FONT.name, maxLines: nameRoom });
+  if (!name.truncated && !wordsFit(label, room)) name = ellipsize(label, room, FONT.name);
+  const below = 20 + name.lines.length * NAME_LH;
+  const descText = t.item.desc ?? '';
+  if (descText.trim() === '') return { name, value: true, desc: NONE, keyed: false };
+  const descRoom = Math.floor((bottom - (below + 16)) / DESC_LH) + 1;
+  if (descRoom < 1) return { name, value: true, desc: NONE, keyed: true };
+  const desc = fitText(descText, { width: room, font: FONT.sub, maxLines: Math.min(3, descRoom) });
+  return { name, value: true, desc, keyed: false };
+}
+
+/** A share of the total as a whole percent; a sliver above zero reads `<1%`, never `0%`. */
+function shareText(value: number, total: number): string {
+  const pct = total > 0 ? (value / total) * 100 : 0;
+  return pct > 0 && pct < 0.5 ? '<1%' : `${Math.round(pct)}%`;
+}
+
+/** A key entry's text: the item's name, value, share and description. */
+function keyText(item: Item | undefined, unit: string | undefined, total: number): string {
+  if (item === undefined) return '';
+  const desc = item.desc !== undefined && item.desc !== '' ? ` — ${item.desc}` : '';
+  return `${item.label} · ${fmt(item.value, unit)} · ${shareText(item.value, total)}${desc}`;
+}
+
+interface KeyEntry {
+  readonly badge: string;
+  readonly text: string;
+  readonly index: number;
+}
+
+/** Key entries flow left to right and wrap at the drawing's width. */
+function keyLayout(entries: readonly KeyEntry[]): { rows: number; at: Array<KeyEntry & { x: number; row: number }> } {
+  const at: Array<KeyEntry & { x: number; row: number }> = [];
+  let x = 0;
+  let row = 0;
+  for (const e of entries) {
+    const w = 24 + textWidth(e.text, FONT.sub);
+    if (x > 0 && x + w > W) {
+      x = 0;
+      row += 1;
+    }
+    at.push({ ...e, x, row });
+    x += w + 24;
+  }
+  return { rows: at.length === 0 ? 0 : row + 1, at };
+}
+
+/** The key under the drawing: each numbered tile (and each item with no area) in full. */
+function keySvg(key: ReturnType<typeof keyLayout>, top: number): string {
+  if (key.at.length === 0) return '';
+  let s = `<g class="tm-key">`;
+  for (const e of key.at) {
+    const y = top + e.row * KEY_ROW_H;
+    s +=
+      `<g${bp(`items.${e.index}.label`)}>` +
+      `<rect x="${r(e.x + 0.5)}" y="${r(y)}" width="17" height="14" rx="2" fill="var(--paper)" stroke="var(--ink)" stroke-width="1"/>` +
+      `<text x="${r(e.x + 9)}" y="${r(y + 10.5)}" class="t-badge c-ink" text-anchor="middle">${escapeHtml(e.badge)}</text>` +
+      `<text x="${r(e.x + 24)}" y="${r(y + 10.5)}" class="t-sub">${escapeHtml(e.text)}</text>` +
+      `</g>`;
+  }
+  return s + `</g>`;
 }

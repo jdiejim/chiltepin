@@ -26,11 +26,22 @@
  * `?` nullable, `⌘` indexed — the default after the type, enum values as a
  * soft sub-row. The entity on the "one" side of the most relations is the
  * aggregate root and takes the accent. Nothing is truncated: cards grow.
+ *
+ * Fit: with `dir` unset, a left-to-right drawing wider than the page column
+ * switches to top-to-bottom when that is narrower, so eight tables read at
+ * full size instead of a scrolling strip. Relations that leave or reach the
+ * same row of one card fan out a few pixels apart (one shared letter when
+ * their cardinality matches), and every relation label is placed on its own
+ * route by the shared label placement — off the cards, off the cardinality
+ * letters, off the other labels and lines.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
+import { placeOnRoutes } from '../svg/edgeSteps.js';
+import { svgWidth } from './frame.js';
+import { wrapAll } from './wrapAll.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
@@ -118,7 +129,22 @@ interface Node {
   readonly dv: number;
 }
 
+/** The page column: an auto-direction ERD wider than this tries top-to-bottom. */
+const ERD_FIT_W = 1100;
+/** Spacing of relation ends that share one anchor: along a row (LR), along a card edge (TB). */
+const FAN_LR = 6;
+const FAN_TB = 22;
+
 export function renderErd(data: BlockDataMap['erd']): string {
+  const lrHtml = layoutErd(data);
+  if (data.dir !== undefined) return lrHtml;
+  const wLR = svgWidth(lrHtml);
+  if (wLR <= ERD_FIT_W) return lrHtml;
+  const tbHtml = layoutErd({ ...data, dir: 'TB' });
+  return svgWidth(tbHtml) < wLR ? tbHtml : lrHtml;
+}
+
+function layoutErd(data: BlockDataMap['erd']): string {
   const ents = data.entities ?? [];
   const rels = data.relations ?? [];
   const groups = data.groups ?? [];
@@ -272,8 +298,16 @@ export function renderErd(data: BlockDataMap['erd']): string {
   }
   const gutterW = new Map<number, number>();
   for (let l = minL; l <= maxL; l++) {
-    const n = gutterEdges.get(l)?.length ?? 0;
-    gutterW.set(l, Math.max(l === maxL ? (n > 0 ? (n + 1) * SLOT : 0) : GUTTER_MIN, (n + 1) * SLOT));
+    const list = gutterEdges.get(l) ?? [];
+    const n = list.length;
+    // A busy left-to-right gutter (three or more labelled relations) widens
+    // so a label fits on a horizontal run of its own route.
+    const labelled = list.filter((rt) => (rt.rel.r.label ?? '') !== '');
+    const room =
+      lr && labelled.length > 2
+        ? Math.max(...labelled.map((rt) => Math.round((rt.rel.r.label ?? '').length * CH + 8))) + 2 * SLOT + 18
+        : 0;
+    gutterW.set(l, Math.max(l === maxL ? (n > 0 ? (n + 1) * SLOT : 0) : GUTTER_MIN, (n + 1) * SLOT, room));
   }
   const topOffset = channels > 0 ? channels * SLOT + 8 : 0;
 
@@ -404,101 +438,198 @@ export function renderErd(data: BlockDataMap['erd']): string {
   });
   s += `</g>`;
 
-  // Relations (under the cards).
   const labels: string[] = [];
-  let hasCard = false;
-  let hasDashed = false;
-  s += `<g${bl('relations')}>`;
-  for (const rt of routes) {
+  // Relations (under the cards). First every route's two ends: which card
+  // side and row each end anchors on.
+  interface Plan {
+    readonly rt: Route;
+    vA: number;
+    vB: number;
+    readonly exitU: number;
+    readonly enterU: number;
+    readonly exitDir: number; // +1 = leaves src toward higher u
+    readonly enterOut: number; // the outward direction of the dst end (for its letter)
+  }
+  const plans: Plan[] = routes.map((rt) => {
     const { rel, src, dst } = rt;
-    hasCard = true;
-    if (rel.dashed) hasDashed = true;
     // Which end holds the foreign key decides the row each end anchors on.
     const fkInFrom = rel.fromMany && !rel.toMany ? true : !rel.fromMany && rel.toMany ? false : holdsFk(rel.from, rel.to, rel.r.fromCol) || !holdsFk(rel.to, rel.from, rel.r.toCol);
     const nm = rel.fromMany && rel.toMany;
     const vA = nm ? src.v + src.dv / 2 : anchorV(src, lr, fkInFrom ? fkRow(rel.from, rel.to, rel.r.fromCol) : pkRow(rel.from, rel.r.fromCol));
     const vB = nm ? dst.v + dst.dv / 2 : anchorV(dst, lr, !fkInFrom ? fkRow(rel.to, rel.from, rel.r.toCol) : pkRow(rel.to, rel.r.toCol));
+    if (rt.self || src.layer === dst.layer) {
+      return { rt, vA, vB, exitU: src.u + src.du, enterU: dst.u + dst.du, exitDir: 1, enterOut: 1 };
+    }
+    const fwd = src.layer < dst.layer;
+    return {
+      rt,
+      vA,
+      vB,
+      exitU: fwd ? src.u + src.du : src.u,
+      enterU: fwd ? dst.u : dst.u + dst.du,
+      exitDir: fwd ? 1 : -1,
+      enterOut: fwd ? -1 : 1,
+    };
+  });
+  // Ends that share one anchor (same card, same side, same row) fan out, in
+  // the order of where their other ends lie, so they never draw as one line.
+  interface EndRef {
+    readonly plan: Plan;
+    readonly which: 'A' | 'B';
+  }
+  const shared = new Map<string, EndRef[]>();
+  for (const plan of plans) {
+    for (const which of ['A', 'B'] as const) {
+      if (plan.rt.self && which === 'B') continue;
+      const node = which === 'A' ? plan.rt.src : plan.rt.dst;
+      const u = which === 'A' ? plan.exitU : plan.enterU;
+      const v = which === 'A' ? plan.vA : plan.vB;
+      const key = `${node.box.name}|${rd(u)}|${rd(v)}`;
+      const list = shared.get(key) ?? [];
+      list.push({ plan, which });
+      shared.set(key, list);
+    }
+  }
+  const fan = lr ? FAN_LR : FAN_TB;
+  /** Ends drawn as one letter: a fanned group whose letters all match. */
+  const letterGroups: Array<{ ends: EndRef[]; text: string }> = [];
+  const letterOf = (e: EndRef): string =>
+    e.which === 'A' ? letterFor(e.plan.rt.rel.fromMany, false) : letterFor(e.plan.rt.rel.toMany, e.plan.rt.rel.toOptional);
+  for (const list of shared.values()) {
+    if (list.length < 2) continue;
+    const other = (e: EndRef): number => (e.which === 'A' ? e.plan.vB : e.plan.vA);
+    list.sort((p, q) => other(p) - other(q));
+    const base = list[0]?.which === 'A' ? list[0].plan.vA : (list[0]?.plan.vB ?? 0);
+    list.forEach((e, i) => {
+      const v = base + (i - (list.length - 1) / 2) * fan;
+      if (e.which === 'A') e.plan.vA = v;
+      else e.plan.vB = v;
+    });
+    const texts = new Set(list.map(letterOf));
+    if (texts.size === 1) letterGroups.push({ ends: list, text: letterOf(list[0] as EndRef) });
+  }
+  const grouped = new Map<string, { first: boolean; text: string }>();
+  for (const g of letterGroups) {
+    g.ends.forEach((e, i) => grouped.set(`${e.plan.rt.rel.idx}|${e.which}`, { first: i === 0, text: g.text }));
+  }
+
+  const routePts: Array<Array<{ x: number; y: number }>> = [];
+  const labelItems: Array<{ idx: number; points: Array<{ x: number; y: number }>; lx: number; ly: number; text: string; w: number }> = [];
+  const letterBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
+  let hasCard = false;
+  let hasDashed = false;
+  s += `<g${bl('relations')}>`;
+  for (const plan of plans) {
+    const { rt, vA, vB, exitU, enterU, exitDir } = plan;
+    const { rel, src, dst } = rt;
+    hasCard = true;
+    if (rel.dashed) hasDashed = true;
     const a = src.layer;
     const b = dst.layer;
-    let d: string;
-    let exitDir: number; // +1 = leaves src toward higher u
-    let enterDir: number; // +1 = enters dst from lower u (i.e. arrives moving +u)
+    let pts: Array<readonly [number, number]>;
     let labelAt: [number, number];
     if (rt.self) {
       const right = src.u + src.du;
       const vb = Math.abs(vB - vA) < 1 ? vA + ROW_H : vB;
       const su = right + SLOT;
-      d = path([
+      pts = [
         [right, vA],
         [su, vA],
         [su, vb],
         [right, vb],
-      ]);
-      exitDir = 1;
-      enterDir = -1;
+      ];
       labelAt = [su + 8, Math.max(vA, vb) + 12];
     } else if (a === b) {
       const right = Math.max(src.u + src.du, dst.u + dst.du);
       const su = rt.slot1 > 0 ? rt.slot1 : right + SLOT;
-      d = path([
-        [src.u + src.du, vA],
+      pts = [
+        [exitU, vA],
         [su, vA],
         [su, vB],
-        [dst.u + dst.du, vB],
-      ]);
-      exitDir = 1;
-      enterDir = -1;
+        [enterU, vB],
+      ];
       labelAt = [su, (vA + vB) / 2];
+    } else if (!rt.long) {
+      pts = [
+        [exitU, vA],
+        [rt.slot1, vA],
+        [rt.slot1, vB],
+        [enterU, vB],
+      ];
+      labelAt = [rt.slot1, (vA + vB) / 2];
     } else {
-      const fwd = a < b;
-      const exitU = fwd ? src.u + src.du : src.u;
-      const enterU = fwd ? dst.u : dst.u + dst.du;
-      exitDir = fwd ? 1 : -1;
-      enterDir = fwd ? 1 : -1;
-      if (!rt.long) {
-        d = path([
-          [exitU, vA],
-          [rt.slot1, vA],
-          [rt.slot1, vB],
-          [enterU, vB],
-        ]);
-        // A short run leaves no room between the two cardinality letters:
-        // the label then sits under the line instead of on its middle.
-        labelAt = [rt.slot1, Math.abs(vA - vB) < ROW_H * 2 ? Math.max(vA, vB) + 12 : (vA + vB) / 2];
-      } else {
-        const ch = MARGIN + rt.channel * SLOT + 4;
-        d = path([
-          [exitU, vA],
-          [rt.slot1, vA],
-          [rt.slot1, ch],
-          [rt.slot2, ch],
-          [rt.slot2, vB],
-          [enterU, vB],
-        ]);
-        labelAt = [(rt.slot1 + rt.slot2) / 2, ch];
-      }
+      const ch = MARGIN + rt.channel * SLOT + 4;
+      pts = [
+        [exitU, vA],
+        [rt.slot1, vA],
+        [rt.slot1, ch],
+        [rt.slot2, ch],
+        [rt.slot2, vB],
+        [enterU, vB],
+      ];
+      labelAt = [(rt.slot1 + rt.slot2) / 2, ch];
     }
+    const d = path(pts);
+    const xy = pts.map(([u, v]) => ({ x: rd(X(u, v)), y: rd(Y(u, v)) }));
+    routePts.push(xy);
     const dash = rel.dashed ? ' stroke-dasharray="5 4"' : '';
+    // A fanned group whose letters match draws its letter once.
+    const letter = (which: 'A' | 'B', u: number, v: number, outward: number, text: string): string => {
+      const g = grouped.get(`${rel.idx}|${which}`);
+      if (g !== undefined && !g.first) return '';
+      letterBoxes.push(letterBox(u, v, outward, text, lr, X, Y));
+      return cardLetter(u, v, outward, text, lr, X, Y);
+    };
     // The whole routed connector is one editable part (`relations.N`).
     s +=
       `<g${bp(`relations.${rel.idx}`)}>` +
       `<path d="${d}" fill="none" stroke="var(--muted)" stroke-width="1.25"${dash}/>` +
-      cardLetter(rt.self ? src.u + src.du : exitDir > 0 ? src.u + src.du : src.u, vA, exitDir, letterFor(rel.fromMany, false), lr, X, Y) +
-      cardLetter(rt.self || a === b ? dst.u + dst.du : enterDir > 0 ? dst.u : dst.u + dst.du, vB, rt.self || a === b ? 1 : -enterDir, letterFor(rel.toMany, rel.toOptional), lr, X, Y) +
+      letter('A', exitU, vA, rt.self ? 1 : exitDir, letterFor(rel.fromMany, false)) +
+      letter('B', enterU, vB, plan.enterOut, letterFor(rel.toMany, rel.toOptional)) +
       `</g>`;
     if (rel.r.label !== undefined && rel.r.label !== '') {
       const text = rel.r.label.toUpperCase();
-      const w = Math.round(text.length * CH + 8);
-      const cx = X(labelAt[0], labelAt[1]);
-      const cy = Y(labelAt[0], labelAt[1]);
-      labels.push(
-        `<rect x="${rd(cx - w / 2)}" y="${rd(cy - 7)}" width="${w}" height="14" fill="var(--paper)"/>` +
-          `<text x="${rd(cx)}" y="${rd(cy + 3.5)}" class="t-arrow er-rel" text-anchor="middle">${escapeHtml(text)}</text>`,
-      );
-      grow(cx + w / 2, cy + 7);
+      labelItems.push({
+        idx: rel.idx,
+        points: xy,
+        lx: X(labelAt[0], labelAt[1]),
+        ly: Y(labelAt[0], labelAt[1]),
+        text,
+        w: Math.round(text.length * CH + 8),
+      });
     }
   }
   s += `</g>`;
+
+  // Relation labels: each on its own route, at the clearest straight run —
+  // off every card, every cardinality letter, every other label and line.
+  const cardBoxes = nodes.map((n) => ({ x: X(n.u, n.v), y: Y(n.u, n.v), w: n.box.w, h: n.box.h }));
+  const boxItems = labelItems.map((it) => ({ points: it.points, lx: it.lx, ly: it.ly, sizes: [{ w: it.w, h: 14 }] }));
+  const spots = placeOnRoutes(boxItems, [...cardBoxes, ...letterBoxes], { routes: routePts });
+  // A label with no clear spot tries again, allowed to touch a letter (never
+  // a card or another label); only then does it keep its route's middle.
+  const placed = spots.flatMap((sp) => (sp !== undefined ? [sp.box] : []));
+  const retry = placeOnRoutes(
+    boxItems.map((it, k) => (spots[k] === undefined ? it : undefined)),
+    [...cardBoxes, ...placed],
+    { routes: routePts },
+  );
+  retry.forEach((sp, k) => {
+    if (sp !== undefined && spots[k] === undefined) spots[k] = sp;
+  });
+  labelItems.forEach((it, k) => {
+    const sp = spots[k];
+    const cx = sp?.lx ?? it.lx;
+    const cy = sp?.ly ?? it.ly;
+    labels.push(
+      // The label twins with its route (same data path, as on every grid diagram).
+      `<g${bp(`relations.${it.idx}`)}>` +
+        `<rect x="${rd(cx - it.w / 2)}" y="${rd(cy - 7)}" width="${it.w}" height="14" fill="var(--paper)"/>` +
+        `<text x="${rd(cx)}" y="${rd(cy + 3.5)}" class="t-arrow er-rel" text-anchor="middle">${escapeHtml(it.text)}</text>` +
+        `</g>`,
+    );
+    grow(cx + it.w / 2, cy + 7);
+  });
 
   // Entity cards.
   const used = new Set<Marker>();
@@ -700,24 +831,12 @@ function rightText(c: ErdColumn): string {
   return parts.join('  ');
 }
 
-/** Greedy word wrap to `max` characters; a single over-long word is split. */
+/**
+ * Word wrap to `max` characters that never drops text: a word longer than a
+ * line breaks at its identifier joints (see `wrapAll`).
+ */
 function wrap(text: string, max: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/).filter((w) => w.length > 0)) {
-    if (line.length === 0) line = word;
-    else if (line.length + 1 + word.length <= max) line += ' ' + word;
-    else {
-      out.push(line);
-      line = word;
-    }
-    while (line.length > max) {
-      out.push(line.slice(0, max));
-      line = line.slice(max);
-    }
-  }
-  if (line.length > 0) out.push(line);
-  return out;
+  return wrapAll(text, max);
 }
 
 // ── Layers ───────────────────────────────────────────────────────────────
@@ -904,6 +1023,24 @@ function parseCard(card: string | undefined): { fromMany: boolean; toMany: boole
 
 function letterFor(many: boolean, optional: boolean): string {
   return optional ? (many ? '0..N' : '0..1') : many ? 'N' : '1';
+}
+
+/** The box a cardinality letter covers (see {@link cardLetter}), for label placement. */
+function letterBox(
+  u: number,
+  v: number,
+  outward: number,
+  text: string,
+  lr: boolean,
+  X: (u: number, v: number) => number,
+  Y: (u: number, v: number) => number,
+): { x: number; y: number; w: number; h: number } {
+  const w = text.length * 5.7 + 2;
+  const uu = u + outward * 10;
+  const x = X(uu, v);
+  const y = Y(uu, v);
+  if (lr) return { x: outward > 0 ? x - 1 : x - w + 1, y: y - 12, w, h: 10 };
+  return { x: x + 3, y: y - 6, w, h: 10 };
 }
 
 /**

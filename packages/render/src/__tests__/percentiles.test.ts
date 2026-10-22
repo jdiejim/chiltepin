@@ -66,10 +66,11 @@ describe('percentiles', () => {
   it('spreads a long tail on a log scale with decade ticks', () => {
     const h = renderPercentiles({ ...data, scale: 'log' });
     expect(h).toContain('>10ms<');
-    expect(h).toContain('>1000ms<');
+    expect(h).toContain('>1k ms<');
     const r = parse(h);
     // On a log axis GET /cart's p50 (18) and p99 (90) sit further apart than on the linear axis.
-    const lin = cx(root.querySelector('[data-bp="rows.1.p99"]')) - cx(root.querySelector('[data-bp="rows.1.p50"]'));
+    const linRoot = parse(renderPercentiles({ ...data, scale: 'linear' }));
+    const lin = cx(linRoot.querySelector('[data-bp="rows.1.p99"]')) - cx(linRoot.querySelector('[data-bp="rows.1.p50"]'));
     const log = cx(r.querySelector('[data-bp="rows.1.p99"]')) - cx(r.querySelector('[data-bp="rows.1.p50"]'));
     expect(log).toBeGreaterThan(lin);
   });

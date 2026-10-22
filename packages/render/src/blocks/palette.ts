@@ -13,6 +13,12 @@
  * translucent chip of the opposite tone so a mid-tone swatch still clears
  * 4.5:1. An author-supplied `on` colour is used as given, without the chip.
  * Only the chrome around the swatches is the skin's.
+ *
+ * Three honesty marks: every swatch has a hairline ring, so a swatch the
+ * colour of the page still shows its edge; a colour with alpha sits on a
+ * checkerboard, so the reader sees it is see-through; and a value the page
+ * cannot draw (a `var(--token)` reference, or not a colour at all) shows a
+ * hatched swatch that says so, never a stand-in grey.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -71,18 +77,60 @@ function contrastFor(swatch: string): string {
 const CHIP_UNDER_DARK = 'rgba(255,255,255,.86)';
 const CHIP_UNDER_LIGHT = 'rgba(0,0,0,.58)';
 
+/** True for a colour with an alpha channel below 1 (`#rgba`, `#rrggbbaa`, `rgba()`, `hsla()`, `transparent`). */
+export function hasAlpha(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  if (v === 'transparent') return true;
+  const hex = /^#([0-9a-f]{4}|[0-9a-f]{8})$/.exec(v);
+  if (hex !== null) {
+    const a = hex[1] ?? '';
+    return a.length === 4 ? a.slice(3) !== 'f' : a.slice(6) !== 'ff';
+  }
+  const fn = /^(?:rgba?|hsla?)\(([^)]*)\)$/.exec(v);
+  if (fn === null) return false;
+  const parts = (fn[1] ?? '').split(/[\s,/]+/).filter((x) => x !== '');
+  if (parts.length < 4) return false;
+  const a = parts[3] ?? '1';
+  const n = a.endsWith('%') ? Number(a.slice(0, -1)) / 100 : Number(a);
+  return Number.isFinite(n) && n < 1;
+}
+
+/** A hatched swatch for a value the page cannot draw, labelled with why. */
+function unresolvedCard(color: PaletteColor, i: number, usage: string): string {
+  const why = /^\s*var\(/i.test(color.value) ? 'token — not resolved here' : 'not a colour';
+  return (
+    `<div class="pl-card"${bp(`colors.${i}`)}>` +
+    `<div class="pl-swatch pl-unresolved" title="${escapeHtml(why)}">` +
+    `<span class="pl-hex pl-hex-raw"${bp(`colors.${i}.value`)}>${escapeHtml(color.value)}</span>` +
+    `</div>` +
+    `<div class="pl-meta">` +
+    `<div class="pl-name t-name"${bp(`colors.${i}.name`)}>${escapeHtml(color.name)}</div>` +
+    `<div class="pl-why">${escapeHtml(why)}</div>` +
+    usage +
+    `</div>` +
+    `</div>`
+  );
+}
+
 function renderCard(color: PaletteColor, i: number): string {
+  const usageHtml =
+    color.usage !== undefined
+      ? `<div class="pl-usage"${bp(`colors.${i}.usage`)}>${escapeHtml(color.usage)}</div>`
+      : '';
+  if (safeColor(color.value, '') === '') return unresolvedCard(color, i, usageHtml);
   const swatch = safeColor(color.value, FALLBACK_SWATCH);
   const auto = contrastFor(swatch);
   const label = safeColor(color.on, auto);
   const chip = color.on === undefined ? `;background:${label === DARK_TEXT ? CHIP_UNDER_DARK : CHIP_UNDER_LIGHT}` : '';
-  const usage =
-    color.usage !== undefined
-      ? `<div class="pl-usage"${bp(`colors.${i}.usage`)}>${escapeHtml(color.usage)}</div>`
-      : '';
+  const usage = usageHtml;
+  // An alpha colour layers over a checkerboard so its see-through part shows.
+  const alpha = hasAlpha(swatch);
+  const ground = alpha
+    ? `background:linear-gradient(${swatch},${swatch}),repeating-conic-gradient(var(--paper-2) 0 25%,var(--paper) 0 50%) 0 0/14px 14px`
+    : `background:${swatch}`;
   return (
     `<div class="pl-card"${bp(`colors.${i}`)}>` +
-    `<div class="pl-swatch" style="background:${swatch}">` +
+    `<div class="pl-swatch${alpha ? ' pl-alpha' : ''}" style="${ground}">` +
     `<span class="pl-hex" style="color:${label}${chip}"${bp(`colors.${i}.value`)}>${escapeHtml(color.value)}</span>` +
     `</div>` +
     `<div class="pl-meta">` +

@@ -23,8 +23,18 @@ import {
 import { houseCss } from './css.js';
 import { escapeHtml } from './escape.js';
 import { renderCover } from './blocks/meta.js';
-import { sectionLabelFor } from './blocks/frame.js';
+import { sectionLabelFor, withFrameCaption } from './blocks/frame.js';
 import { renderProse } from './markdown.js';
+import {
+  captionInner,
+  figureAnchor,
+  NON_FIGURE,
+  planHeadings,
+  readingStats,
+  type DocumentFigure,
+  type DocumentHeading,
+  type DocumentOutline,
+} from './outline.js';
 import { bp } from './paths.js';
 import { htmlRenderers } from './registry.js';
 import { globalDefsSvg } from './svg/defs.js';
@@ -62,6 +72,12 @@ export interface DocumentSection {
   readonly title?: string;
   /** The block's user-supplied `id:` (referenceable as `doc#id`), if it has one. */
   readonly blockId?: string;
+  /**
+   * The stable anchor a link should use: the block `id:`, else the figure's
+   * `fig-<slug>` anchor. `section-NN` renumbers when a block is inserted;
+   * this does not.
+   */
+  readonly anchor?: string;
 }
 
 /** The composable pieces of a rendered document. */
@@ -76,13 +92,47 @@ export interface DocumentParts {
   readonly title: string;
   /** Section index for navigation. */
   readonly sections: readonly DocumentSection[];
+  /**
+   * The page's headings and numbered figures, for a table of contents.
+   * Always set by {@link renderDocumentParts}; optional so a caller that
+   * builds its own parts (an error page) need not invent one.
+   */
+  readonly outline?: DocumentOutline;
 }
 
 interface RenderCtx {
+  /**
+   * `page`: block titles become figure captions and headings take anchor ids.
+   * `slides`: the deck's section head, unchanged — the slide header replaces it.
+   */
+  readonly mode: 'page' | 'slides';
   sectionNum: number;
   sections: DocumentSection[];
   /** Typed segment → the trailing heading of the prose run directly above it. */
   headingFor: WeakMap<Segment, string>;
+  /** Page mode: the numbered figures so far. */
+  figures: DocumentFigure[];
+  /** Page mode: every anchor id already taken (block ids, headings, figures). */
+  used: Set<string>;
+  /** Page mode: the outline heading ids of each prose run. */
+  headingIds: WeakMap<Segment, readonly string[]>;
+  /** Page mode: every outline heading, in document order. */
+  headings: readonly DocumentHeading[];
+}
+
+/** A context for one render pass. */
+function newCtx(doc: Document, mode: 'page' | 'slides'): RenderCtx {
+  const plan = mode === 'page' ? planHeadings(doc) : undefined;
+  return {
+    mode,
+    sectionNum: 0,
+    sections: [],
+    headingFor: headingTitleMap(doc.segments),
+    figures: [],
+    used: plan?.used ?? new Set(),
+    headingIds: plan?.bySegment ?? new WeakMap(),
+    headings: plan?.headings ?? [],
+  };
 }
 
 /**
@@ -114,7 +164,7 @@ function pad2(n: number): string {
  * Blocks whose `title` is the visual centerpiece — the section head must not
  * lift it (the block renders it itself at presentation scale).
  */
-const OWNS_TITLE: ReadonlySet<BlockType> = new Set(['divider', 'takeaways']);
+const OWNS_TITLE: ReadonlySet<BlockType> = new Set(['divider', 'takeaways', 'callout']);
 
 /** Reads optional title/lede from a block's data, defensively typed. */
 function readTitleAndLede(data: unknown): { title?: string; lede?: string } {
@@ -162,6 +212,7 @@ function renderTypedSegment(seg: TypedSegment, ctx: RenderCtx): string {
   }
   if (seg.data === null || seg.data === undefined) return '';
 
+  if (ctx.mode === 'page') return renderPageSection(seg, ctx);
   const { title, lede } = readTitleAndLede(seg.data);
   // The section head owns the title at the top level — strip it from the data
   // so the block's own header doesn't repeat it (nested renders, e.g. gallery
@@ -211,8 +262,89 @@ function renderTypedSegment(seg: TypedSegment, ctx: RenderCtx): string {
   return `<section id="${id}" class="section-block"${dataId}>${anchor}${head}${body}</section>`;
 }
 
+/** Lowercase letters and digits only, so near-identical titles compare equal. */
+function squash(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * True when a caption title says nothing the heading above does not: the
+ * heading contains it. A title MORE specific than its heading ("Single-write
+ * rollout" under "## Rollout") keeps its words.
+ */
+export function captionRepeatsHeading(heading: string, title: string): boolean {
+  const h = squash(heading);
+  const t = squash(title);
+  return t.length > 0 && h.includes(t);
+}
+
+/**
+ * A block on a page: the author's headings are the document's headings, so
+ * the block's `title` becomes its figure caption — "Fig. N · title" in the
+ * frame's head row, or a caption line above a block that has no frame. The
+ * `lede` is a one-line takeaway above the figure. No `SECTION NN` eyebrow.
+ */
+function renderPageSection(seg: TypedSegment, ctx: RenderCtx): string {
+  if (seg.data === null || seg.data === undefined) return '';
+  const { title, lede } = readTitleAndLede(seg.data);
+  const ownsTitle = OWNS_TITLE.has(seg.kind);
+  const bodyData =
+    !ownsTitle && title !== undefined && typeof seg.data === 'object'
+      ? { ...(seg.data as Record<string, unknown>), title: undefined }
+      : seg.data;
+  let body = dispatchBlock(seg.kind, bodyData as BlockDataMap[typeof seg.kind]);
+
+  const heading = ctx.headingFor.get(seg);
+  const dupOfHeading =
+    !ownsTitle && title !== undefined && heading !== undefined && captionRepeatsHeading(heading, title);
+  const navTitle = title ?? (!ownsTitle ? heading : undefined);
+
+  ctx.sectionNum += 1;
+  const num = ctx.sectionNum;
+  const id = `section-${pad2(num)}`;
+
+  // The caption: numbered for a figure, a plain label for a narrative block.
+  let caption = '';
+  let anchor = seg.id;
+  let figure = false;
+  if (!ownsTitle && title !== undefined) {
+    figure = !NON_FIGURE.has(seg.kind);
+    // A narrative label that repeats the heading above says nothing new.
+    if (figure || !dupOfHeading) {
+      const capId = seg.id === undefined ? figureAnchor(title, ctx.used) : undefined;
+      anchor = seg.id ?? capId;
+      const figNum = figure ? ctx.figures.length + 1 : undefined;
+      if (figNum !== undefined && anchor !== undefined) {
+        ctx.figures.push({ num: figNum, title, anchor, sectionId: id });
+      }
+      const inner = captionInner(figNum, dupOfHeading ? undefined : title);
+      const idAttr = capId !== undefined ? ` id="${escapeHtml(capId)}"` : '';
+      const framed = withFrameCaption(body, `<span class="diagram-title fig-caption"${idAttr}>${inner}</span>`);
+      if (framed !== undefined) body = framed;
+      else caption = `<p class="fig-caption${figure ? '' : ' is-label'}"${idAttr}>${inner}</p>`;
+    }
+  }
+  ctx.sections.push({
+    id,
+    num,
+    label: sectionLabelFor(seg),
+    ...(navTitle !== undefined ? { title: navTitle } : {}),
+    ...(seg.id !== undefined ? { blockId: seg.id } : {}),
+    ...(anchor !== undefined ? { anchor } : {}),
+  });
+  const ledeHtml =
+    lede !== undefined ? `<p class="section-lede"${bp('lede')}>${escapeHtml(lede)}</p>` : '';
+  const blockAnchor =
+    seg.id !== undefined
+      ? `<span class="block-anchor" id="${escapeHtml(seg.id)}" aria-hidden="true"></span>`
+      : '';
+  const dataId = seg.id !== undefined ? ` data-block-id="${escapeHtml(seg.id)}"` : '';
+  const cls = figure ? 'section-block is-figure' : 'section-block';
+  return `<section id="${id}" class="${cls}"${dataId}>${blockAnchor}${ledeHtml}${caption}${body}</section>`;
+}
+
 function renderSegment(seg: Segment, ctx: RenderCtx): string {
-  if (seg.kind === 'markdown') return renderProse(seg.text);
+  if (seg.kind === 'markdown') return renderProse(seg.text, ctx.headingIds.get(seg) ?? []);
   return renderTypedSegment(seg, ctx);
 }
 
@@ -254,6 +386,8 @@ export interface DocumentSegmentsResult {
   readonly segments: readonly RenderedSegment[];
   /** Section index for navigation. */
   readonly sections: readonly DocumentSection[];
+  /** The page's headings and numbered figures, for a table of contents. */
+  readonly outline: DocumentOutline;
 }
 
 /**
@@ -275,7 +409,7 @@ export function renderDocumentSegments(
   const title = doc.meta?.title ?? 'Untitled';
   const theme = opts.theme ?? DEFAULT_THEME;
   const themeVars = buildThemeVars(theme, opts.themeVars);
-  const ctx: RenderCtx = { sectionNum: 0, sections: [], headingFor: headingTitleMap(doc.segments) };
+  const ctx = newCtx(doc, 'page');
   const segments: RenderedSegment[] = doc.segments.map((s) => {
     const before = ctx.sections.length;
     const html = renderSegment(s, ctx);
@@ -286,14 +420,16 @@ export function renderDocumentSegments(
       ...(section !== undefined ? { sectionId: section.id, sectionNum: section.num } : {}),
     };
   });
+  const outline: DocumentOutline = { headings: ctx.headings, figures: ctx.figures };
   return {
     css: houseCss,
     themeVars,
     title,
     defs: globalDefsSvg(),
-    cover: renderCover(doc.meta),
+    cover: renderCover(doc.meta, readingStats(doc, ctx.figures.length)),
     segments,
     sections: ctx.sections,
+    outline,
   };
 }
 
@@ -308,12 +444,12 @@ export function renderDocumentSegments(
  * @returns The CSS, theme vars, body HTML, title, and section index.
  */
 export function renderDocumentParts(doc: Document, opts: RenderPartsOptions = {}): DocumentParts {
-  const { css, themeVars, title, defs, cover, segments, sections } = renderDocumentSegments(
+  const { css, themeVars, title, defs, cover, segments, sections, outline } = renderDocumentSegments(
     doc,
     opts,
   );
   const body = defs + cover + segments.map((s) => s.html).join('');
-  return { css, themeVars, body, title, sections };
+  return { css, themeVars, body, title, sections, outline };
 }
 
 /**
@@ -597,7 +733,7 @@ export function renderSlides(doc: Document, opts: RenderPartsOptions = {}): Slid
   const title = doc.meta?.title ?? 'Untitled';
   const theme = opts.theme ?? DEFAULT_THEME;
   const themeVars = buildThemeVars(theme, opts.themeVars);
-  const ctx: RenderCtx = { sectionNum: 0, sections: [], headingFor: headingTitleMap(doc.segments) };
+  const ctx = newCtx(doc, 'slides');
   const slides: Slide[] = [];
 
   if (doc.meta !== undefined) slides.push({ label: 'Cover', title, html: renderCover(doc.meta) });

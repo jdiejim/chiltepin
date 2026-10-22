@@ -26,11 +26,14 @@ files.
 ## The rule
 
 Write a dialect fence when you already have the text in that grammar and
-the diagram needs only what the subset can say. Switch to the typed YAML
-block when you need a field the dialect cannot say: `endpoint`, `foot`,
-`summary` / `code` / `note` on a message, `groups`, `guard`, node `kind`
-overrides, `accent`, `description`, `lede`, or an erd `dir` / relation
-`label`. Never mix: one fence is either dialect text or YAML.
+the diagram needs only what the subset can say. A Mermaid flowchart drops
+three things the kit needs: node `kind` (so no AI kit, no glyphs, no family
+hue — every node is a process, a decision, or a start/end), `groups`, and
+`accent`. It also has no `title`, `description`, or `lede` — so no figure
+caption. Switch to the typed YAML block for any of these, or for
+`endpoint`, `foot`, `summary` / `code` / `note` on a message, `guard`, or
+an erd `dir` / relation `label`. Never mix: one fence is either dialect
+text or YAML.
 
 # Mermaid
 

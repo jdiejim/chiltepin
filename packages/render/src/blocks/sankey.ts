@@ -17,11 +17,14 @@
  *      biggest column first, so ribbons cross as little as the data allows.
  *
  * Ribbons are filled cubic curves (two horizontal-tangent beziers and two
- * straight edges). Skin (`DESIGN.md`): stages are ink bars, ribbons are paper
- * pipes with a `rule-solid` edge, and the accent goes to the flows out of a
- * node the author marked with an accent — or, when none is, to the single
- * heaviest ribbon, which is the answer the chart exists to give. `accent:
- * red` is `negative`.
+ * straight edges). Skin (`DESIGN.md`): stages are ink bars; a ribbon is a
+ * translucent tint of its source's hue with no outline, so a ribbon reads
+ * back to where it came from and two crossing ribbons both stay visible.
+ * When the author marks one node (`accent`), its flows take the accent and
+ * every other ribbon steps back to a neutral tint; `accent: red` is
+ * `negative`. A ribbon's value rides its centre line where the ribbon is
+ * thick enough, at the first spot along it that clears every stage label and
+ * every value already placed.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -29,6 +32,8 @@ import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { marksOf, type Mark } from '../svg/dsTone.js';
+import { HUES } from '../svg/hues.js';
+import { FONT, textWidth } from '../svg/wrapText.js';
 import { diagramFrame } from './frame.js';
 
 type SankeyData = BlockDataMap['sankey'];
@@ -48,11 +53,19 @@ const NODE_FILL: Record<Tone, string> = {
   accent: 'var(--accent)',
   negative: 'var(--negative)',
 };
-const RIBBON_ATTRS: Record<Tone, string> = {
-  plain: 'fill="var(--paper)" stroke="var(--rule-solid)" stroke-width="1"',
-  accent: 'fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1"',
-  negative: 'fill="var(--negative-tint)" stroke="var(--negative)" stroke-width="1"',
-};
+/** Ribbon opacity: enough to read the hue, low enough that a crossing ribbon shows through. */
+const RIBBON_OPACITY = 0.32;
+/** A ribbon that is not the author's focus, when one node is flagged. */
+const RIBBON_QUIET = 'fill="var(--ink)" fill-opacity="0.1"';
+
+
+interface Box {
+  readonly x0: number;
+  readonly x1: number;
+  readonly y0: number;
+  readonly y1: number;
+}
+const overlaps = (a: Box, b: Box): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
 const W = 900;
 const NODE_W = 13;
@@ -184,24 +197,45 @@ export function renderSankey(data: SankeyData): string {
     }
   });
 
-  // The accent: flows out of a flagged node; else the single heaviest ribbon.
-  const flagged = [...nodes.values()].some((n) => n.tone !== 'plain');
-  let heaviest = -1;
-  if (!flagged) {
-    let best = 0;
-    data.links.forEach((l, li) => {
-      if (l.from === l.to || !nodes.has(l.from) || !nodes.has(l.to)) return;
-      if (l.value > best) {
-        best = l.value;
-        heaviest = li;
-      }
-    });
+  // Colour: each source stage owns a hue (in first-seen order), and its
+  // flows wear a translucent tint of it. A node the author flagged takes the
+  // focus instead: its flows are accent (or negative), every other is quiet.
+  const focused = [...nodes.values()].some((n) => n.tone !== 'plain');
+  const hueOf = new Map<string, string>();
+  for (const l of links) {
+    if (!hueOf.has(l.from)) hueOf.set(l.from, `var(--hue-${HUES[hueOf.size % HUES.length] ?? 'blue'})`);
   }
+  const ribbonPaint = (a: Placed): string => {
+    if (a.tone === 'accent') return 'fill="var(--accent)" fill-opacity="0.42"';
+    if (a.tone === 'negative') return 'fill="var(--negative)" fill-opacity="0.36"';
+    if (focused) return RIBBON_QUIET;
+    return `fill="${hueOf.get(a.id) ?? 'var(--ink)'}" fill-opacity="${RIBBON_OPACITY}"`;
+  };
+
+  // Stage labels sit outside the bar, flipping side on the last column so
+  // they never run off the canvas, and staying inside it top and bottom.
+  // Their boxes are known first: a ribbon value must clear every one.
+  const labelOf = new Map<string, { tx: number; ty: number; anchor: 'start' | 'end'; box: Box; valueText: string; mw: number }>();
+  for (const n of nodes.values()) {
+    const last = n.col === cols - 1;
+    const tx = last ? n.x - 8 : n.x + NODE_W + 8;
+    const ty = Math.min(Math.max(n.y + n.h / 2, 12), height - 22);
+    const valueText = fmt(n.value, data.unit);
+    const mw = Math.max(textWidth(n.label, FONT.name), textWidth(valueText, FONT.sub)) + 8;
+    const bx = last ? tx - mw + 4 : tx - 4;
+    labelOf.set(n.id, { tx, ty, anchor: last ? 'end' : 'start', box: { x0: bx, x1: bx + mw, y0: ty - 9, y1: ty + 19 }, valueText, mw });
+  }
+  const placedBoxes: Box[] = [
+    ...[...labelOf.values()].map((l) => l.box),
+    // The stage bars themselves: a ribbon value never sits on a bar.
+    ...[...nodes.values()].map((n) => ({ x0: n.x - 2, x1: n.x + NODE_W + 2, y0: n.y, y1: n.y + n.h })),
+  ];
 
   let s = `<svg viewBox="0 0 ${W} ${height}" role="img"><title>${escapeHtml(data.title ?? 'Flow volumes')}</title>`;
 
   // Ribbons first, so the node bars and their labels sit on top.
-  const used = new Set<Tone>();
+  const used = new Set<'hue' | 'accent' | 'negative' | 'quiet'>();
+  let values = '';
   s += `<g${bl('links')}>`;
   data.links.forEach((l, li) => {
     const a = nodes.get(l.from);
@@ -218,44 +252,55 @@ export function renderSankey(data: SankeyData): string {
     const d =
       `M ${r(x0)} ${r(y0)} C ${r(mid)} ${r(y0)}, ${r(mid)} ${r(y1)}, ${r(x1)} ${r(y1)} ` +
       `L ${r(x1)} ${r(y1 + t)} C ${r(mid)} ${r(y1 + t)}, ${r(mid)} ${r(y0 + t)}, ${r(x0)} ${r(y0 + t)} Z`;
-    const tone: Tone = a.tone !== 'plain' ? a.tone : li === heaviest ? 'accent' : 'plain';
-    used.add(tone);
-    s += `<path d="${d}" ${RIBBON_ATTRS[tone]}${bp(`links.${li}`)}><title>${escapeHtml(`${a.label} → ${b.label}: ${fmt(l.value, data.unit)}`)}</title></path>`;
-    // The value rides the ribbon where it is thick enough to hold it.
+    used.add(a.tone === 'accent' ? 'accent' : a.tone === 'negative' ? 'negative' : focused ? 'quiet' : 'hue');
+    s += `<path d="${d}" ${ribbonPaint(a)}${bp(`links.${li}`)}><title>${escapeHtml(`${a.label} → ${b.label}: ${fmt(l.value, data.unit)}`)}</title></path>`;
+    // The value rides the ribbon's centre line where the ribbon can hold it,
+    // at the first spot along it that clears the stage labels and the values
+    // already placed. No spot → no label (the ribbon's tooltip keeps it).
     if (t >= 13) {
       const label = l.label ?? fmt(l.value, data.unit);
-      const cls = tone === 'accent' ? 't-arrow c-accent' : tone === 'negative' ? 't-arrow c-negative' : 't-arrow';
-      s += `<text x="${r(mid)}" y="${r((y0 + y1) / 2 + t / 2 + 3)}" class="${cls}" text-anchor="middle">${escapeHtml(label)}</text>`;
+      const w = textWidth(label, FONT.arrow);
+      const at = (u: number): { x: number; y: number } => {
+        const v = 1 - u;
+        const x = v * v * v * x0 + 3 * v * v * u * mid + 3 * v * u * u * mid + u * u * u * x1;
+        const y = v * v * v * y0 + 3 * v * v * u * y0 + 3 * v * u * u * y1 + u * u * u * y1 + t / 2;
+        return { x, y };
+      };
+      for (const u of [0.5, 0.38, 0.62, 0.28, 0.72]) {
+        const p = at(u);
+        const box: Box = { x0: p.x - w / 2 - 2, x1: p.x + w / 2 + 2, y0: p.y - 7, y1: p.y + 5 };
+        if (placedBoxes.some((o) => overlaps(o, box))) continue;
+        placedBoxes.push(box);
+        const cls = a.tone === 'accent' ? 't-arrow c-accent' : a.tone === 'negative' ? 't-arrow c-negative' : 't-arrow c-ink';
+        values += `<text x="${r(p.x)}" y="${r(p.y + 3)}" class="${cls}" text-anchor="middle">${escapeHtml(label)}</text>`;
+        break;
+      }
     }
   });
-  s += `</g>`;
+  s += values + `</g>`;
 
   s += `<g${bl('nodes')}>`;
   for (const n of nodes.values()) {
     const attrs = n.path !== undefined ? bp(n.path) : '';
+    const lab = labelOf.get(n.id);
     s += `<g${attrs}>`;
     s += `<rect x="${r(n.x)}" y="${r(n.y)}" width="${NODE_W}" height="${r(n.h)}" fill="${NODE_FILL[n.tone]}"/>`;
-    // Labels sit outside the bar, flipping side on the last column so they
-    // never run off the canvas.
-    const last = n.col === cols - 1;
-    const tx = last ? n.x - 8 : n.x + NODE_W + 8;
-    const ty = n.y + n.h / 2;
-    const anchor = last ? 'end' : 'start';
-    const nameCls = n.tone === 'accent' ? 't-name c-accent' : n.tone === 'negative' ? 't-name c-negative' : 't-name';
-    // A paper mask under both lines keeps the label off the ribbon edges
-    // that leave and arrive around the bar.
-    const valueText = fmt(n.value, data.unit);
-    const mw = Math.max(n.label.length * 7.2, valueText.length * 6.2) + 8;
-    s += `<rect x="${r(last ? tx - mw + 4 : tx - 4)}" y="${r(ty - 9)}" width="${r(mw)}" height="28" rx="2" fill="var(--paper)"/>`;
-    s += `<text x="${r(tx)}" y="${r(ty + 3)}" class="${nameCls}" text-anchor="${anchor}">${escapeHtml(n.label)}</text>`;
-    s += `<text x="${r(tx)}" y="${r(ty + 15)}" class="t-sub c-muted" text-anchor="${anchor}">${escapeHtml(valueText)}</text>`;
+    if (lab !== undefined) {
+      const nameCls = n.tone === 'accent' ? 't-name c-accent' : n.tone === 'negative' ? 't-name c-negative' : 't-name';
+      // A paper mask under both lines keeps the label off the ribbon edges
+      // that leave and arrive around the bar.
+      s += `<rect x="${r(lab.box.x0)}" y="${r(lab.box.y0)}" width="${r(lab.mw)}" height="28" rx="2" fill="var(--paper)"/>`;
+      s += `<text x="${r(lab.tx)}" y="${r(lab.ty + 3)}" class="${nameCls}" text-anchor="${lab.anchor}">${escapeHtml(n.label)}</text>`;
+      s += `<text x="${r(lab.tx)}" y="${r(lab.ty + 15)}" class="t-sub c-muted" text-anchor="${lab.anchor}">${escapeHtml(lab.valueText)}</text>`;
+    }
     s += `</g>`;
   }
   s += `</g></svg>`;
 
   const items: LegendItem[] = [{ swatch: 'fill', fill: 'var(--ink)', label: 'stage (height = volume)' }];
-  if (used.has('plain')) items.push({ swatch: 'fill', fill: 'var(--paper)', label: 'flow (width = volume)' });
-  if (used.has('accent')) items.push({ swatch: 'node-accent', label: flagged ? 'focal flow' : 'heaviest flow' });
+  if (used.has('hue')) items.push({ swatch: 'fill', fill: hueOf.values().next().value ?? 'var(--ink)', label: 'flow (width = volume, colour = source)' });
+  if (used.has('quiet')) items.push({ swatch: 'fill', fill: 'var(--paper-2)', label: 'flow (width = volume)' });
+  if (used.has('accent')) items.push({ swatch: 'node-accent', label: 'focal flow' });
   if (used.has('negative')) items.push({ swatch: 'fill', fill: 'var(--negative-tint)', label: 'negative flow' });
   return frame(data, s, renderLegend(items));
 }

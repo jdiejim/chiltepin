@@ -22,7 +22,7 @@
  *   `-->` response (sequence) / dashed (edges), `-x->` error. Sequence only:
  *   `-> +to` / `--> -to` activation signs, and the frame markers
  *   `alt: label` / `opt` / `loop` / `par` / `break` / `critical` / `else:
- *   label` / `end`.
+ *   label` / `end`. Block only: a leading `3. ` sets the edge's `step`.
  * - erd.relations: `user ||--o{ order: places` — crow's-foot cardinality
  *   (`||--||` 1:1 · `||--o{` 1:N · `}o--||` N:1 · `}o--o{` N:M · `||--o|`
  *   0..1); a `..` body (`||..o{`) is non-identifying; plain `->` is accepted
@@ -92,11 +92,17 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** Splits `s` on its FIRST `:` into a head and an optional trimmed label. */
+/**
+ * Splits `s` on its FIRST `:` into a head and an optional trimmed label. A
+ * label in one pair of matching quotes loses them: a whole terse line quoted
+ * for YAML (`'a -> b: "yes"'`) reads the same as the mapping form.
+ */
 function splitLabel(s: string): { readonly head: string; readonly label?: string } {
   const i = s.indexOf(':');
   if (i === -1) return { head: s.trim() };
-  const label = s.slice(i + 1).trim();
+  let label = s.slice(i + 1).trim();
+  const q = label[0];
+  if (label.length >= 2 && (q === '"' || q === "'") && label.endsWith(q)) label = label.slice(1, -1).trim();
   return { head: s.slice(0, i).trim(), ...(label.length > 0 ? { label } : {}) };
 }
 
@@ -275,6 +281,37 @@ const messageGrammar: Grammar = {
   contract: messageToString,
 };
 const edgeGrammar: Grammar = arrowGrammar(edgeFromString);
+
+/**
+ * A numbered `block` edge: `3. api -> cache: read` — a leading `N.` is the
+ * request `step`. Before this form a head with a space before the arrow never
+ * parsed, so no older line changes meaning. A line whose rest is not an edge
+ * (`3. -> api`, an edge from the node `3.`) keeps the plain reading.
+ */
+const STEP_PREFIX_RE = /^(\d+)\.\s+(\S.*)$/;
+
+function stepEdgeFromString(s: string): unknown {
+  const m = STEP_PREFIX_RE.exec(s.trim());
+  if (m === null) return edgeFromString(s);
+  const out = edgeFromString(m[2] as string);
+  if (typeof out === 'string' || !isPlainObject(out)) return edgeFromString(s);
+  return { ...out, step: Number(m[1]) };
+}
+
+const stepEdgeGrammar: Grammar = {
+  expand: stepEdgeFromString,
+  signature: (key) => {
+    const m = STEP_PREFIX_RE.exec(key.trim());
+    return ARROW_RE.test(key) || (m !== null && ARROW_RE.test(m[2] as string));
+  },
+  contract: (v) => {
+    const { step, ...rest } = v;
+    if (step === undefined) return edgeToString(rest);
+    if (typeof step !== 'number' || !Number.isInteger(step) || step < 1) return undefined;
+    const edge = edgeToString(rest);
+    return edge === undefined ? undefined : `${step}. ${edge}`;
+  },
+};
 
 /** Cardinality → the crow's-foot operator that {@link cardOf} reads back. */
 const CARD_OPS: Readonly<Record<string, string>> = {
@@ -1149,7 +1186,7 @@ const TERSE_FIELDS: Partial<Record<BlockType, Readonly<Record<string, Grammar>>>
   erd: { relations: relationGrammar, 'entities.columns': erdColumnGrammar },
   flow: { edges: edgeGrammar, nodes: nodeGrammar('flow', 'nodes', 'label') },
   graph: { edges: edgeGrammar, nodes: nodeGrammar('graph', 'nodes', 'label') },
-  block: { edges: edgeGrammar, nodes: nodeGrammar('block', 'nodes', 'name') },
+  block: { edges: stepEdgeGrammar, nodes: nodeGrammar('block', 'nodes', 'name') },
   state: { transitions: transitionGrammar, states: nodeGrammar('state', 'states', 'name') },
   dfd: { edges: linkGrammar, nodes: nodeGrammar('dfd', 'nodes', 'name') },
   swimlane: { links: edgeGrammar, lanes: laneGrammar, steps: swimlaneStepGrammar },

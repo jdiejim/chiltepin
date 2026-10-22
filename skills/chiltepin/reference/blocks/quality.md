@@ -1,8 +1,8 @@
 # Chiltepin blocks — Quality & audits
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Verdicts with evidence. What is wrong now (`audit`), what passes
 and fails a standard (`checklist`), what is over budget (`perfbudget`), how

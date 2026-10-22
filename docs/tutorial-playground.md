@@ -10,7 +10,7 @@ actors:
   - id: Client
     name: Client
   - id: Server
-    name: Server
+    name: Orders API
 messages:
   - Client -> Server: request
   - Server --> Client: response

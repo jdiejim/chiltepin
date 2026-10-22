@@ -24,8 +24,10 @@ trade style for one property: each sentence has exactly one reading.
 - Instructions are always active voice: "Run `chiltepin check`", never "`chiltepin check`
   should be run". Passive voice is allowed only in descriptive text, and only
   when the actor is truly unknown or irrelevant.
-- Use simple tenses only: past, present, future. No perfect or continuous
-  forms.
+- Use simple tenses: past, present, future. One exception: incident and
+  status prose may use the present perfect for a state that started in the
+  past and still holds ("Checkout has failed since 09:00"). `W_PROSE_TENSE`
+  flags it; keep the sentence. No continuous forms.
 - Put the main action first and the condition after it: "Rerun the build if
   the check fails."
 - Keep articles and relative pronouns: "Run the check that validates the doc",
@@ -38,9 +40,26 @@ trade style for one property: each sentence has exactly one reading.
 
 ## Paragraphs
 
-- Descriptive paragraphs hold 6 sentences at most; procedural paragraphs, 3.
+- Descriptive paragraphs hold 6 sentences at most; procedural paragraphs, 3
+  (`W_PROSE_LONG_PARAGRAPH` uses the same caps). Most need 2–4.
 - Give each paragraph one topic. Announce the topic in the first sentence.
 - Put warnings and prerequisites before the step they apply to, never after.
+
+## Rhythm
+
+Short sentences are the rule. A page of them still reads as a list unless
+each one connects to the last.
+
+- Open a section by linking it to the previous one: the result it builds
+  on, or the question it leaves open.
+- Write at most one "so" clause per paragraph. A chain of "X, so Y, not Z"
+  sentences reads as a template.
+- Write "because" when the cause is the news; lead with the consequence
+  when the consequence is the news.
+- Give a paragraph one of three supports: an example, a number, or a
+  contrast. Not all three, and not none.
+- Vary the sentence openings. Three sentences in a row that start with the
+  same subject read as a list; join two, or start one with its condition.
 
 ## Where each level applies
 
@@ -66,21 +85,22 @@ the diagram is the data, and it must stay complete.
 
 ## Worked pairs
 
-**Pair 1 — a restated diagram (docs/showcase.md:512).**
+**Pair 1 — a restated diagram (`docs/reference/showcase.md`).**
 
 ```
 Before: A controller calls OrderService, which loads via an OrderRepository,
 charges through a PaymentGateway interface (Stripe/Adyen adapters), and
 egresses to Postgres, the event bus, and external gateways.
 
-After:  Payment providers sit behind one interface, so a Stripe outage is a
-config change, not a code change.
+After:  A Stripe outage needs one config change and no deploy. Every payment
+provider sits behind the PaymentGateway interface.
 ```
 
 The before repeats what the diagram already shows. The after states the
-consequence that the diagram cannot show.
+consequence that the diagram cannot show, then the one structural fact
+behind it.
 
-**Pair 2 — a lede with three jobs (resources/orders-api.md:29).**
+**Pair 2 — a lede with three jobs (`resources/orders-api.md`).**
 
 ```
 Before: Time runs downward. Solid arrows are synchronous requests; dashed are
@@ -95,7 +115,7 @@ as final.
 The before teaches notation, describes arrows, and buries the invariant. The
 after does one job: the guarantee, and what it lets clients do.
 
-**Pair 3 — the wrapper opener (docs/showcase.md:9).**
+**Pair 3 — the wrapper opener (`docs/reference/showcase.md`).**
 
 ```
 Before: The blocks below are rendered from typed YAML fences. Edit the source
@@ -108,6 +128,22 @@ After:  Edit a YAML block to change its diagram. Then run `chiltepin html`. The
 The before is passive, restates the page, and stacks two instructions into one
 sentence. The after gives one instruction per sentence, plus the fact that
 makes the edit safe.
+
+**Pair 4 — choppy to connected.**
+
+```
+Before: The broker redelivers the job after 60 s. The job runs for 90 s.
+The worker sends the email. The ledger write happens after the send. The
+second worker sends it again.
+
+After:  The broker redelivers a job after 60 s, but a batch runs for 90 s.
+Because the worker writes the ledger only after the send, a second worker
+finds no record and sends the email again.
+```
+
+The before is five true sentences with no links between them; the reader
+must build the mechanism. The after keeps every fact and states the one
+cause that matters with "because".
 
 ## Constraints on how we use STE
 

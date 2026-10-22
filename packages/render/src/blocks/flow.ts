@@ -1,36 +1,40 @@
 /**
  * Renders a flowchart — decision diamonds, stadium start/end nodes, rectangles
  * for processes (with an eyebrow chip for the AI kinds: agent, llm, tool,
- * human, memory), with orthogonal edges.
+ * human, memory, guard, eval), with orthogonal edges.
  *
- * Skin (`DESIGN.md`): every node is paper with an ink outline; the shape
- * carries the kind. The accent goes to the `end` node(s) that are not error
- * exits — and to the edge into them — so the happy path reads at a glance.
- * Error edges (`kind: error`, or a label like "no" / "fail") are `negative`.
+ * Skin (`DESIGN.md`): a plain step is paper with an ink outline; the shape
+ * carries the kind. An AI kind takes its family hue (the AI kit in
+ * `blockStyle.ts`): the chip and glyph in the hue, the fill in its tint. The
+ * accent goes to the `end` node(s) that are not error exits — and to the edge
+ * into them — so the happy path reads at a glance. Only an edge the author
+ * marks as an error (`-x->`, or `kind: error`) is `negative`: a "no" branch
+ * is often the normal path, so a label never colours an edge.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { edgeLanes, entryPortOffsets, ortho } from '../svg/ortho.js';
+import { layoutEdges } from '../svg/edgeLayout.js';
+import { gapsForLabels, geometryOf, hasBackEdge, LOOP_PAD, type GeometryReport, type Slack } from '../svg/geometry.js';
 import { wrapText } from '../svg/wrapText.js';
-import { edgeLabelLayer, type EdgeLabelPoint } from '../svg/edgeSteps.js';
-import { GROUP_PADS, gridGroupsSvg, groupExtent, nestingPads } from '../svg/gridGroups.js';
+import { GROUP_PADS, gridGroupsSvg, groupExtent, groupLabelBoxes, groupPanelRects, nestingPads } from '../svg/gridGroups.js';
 import { gridMetaAttrs, nodeCellAttrs } from '../svg/gridMeta.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
-import { nodeGlyph } from '../svg/blockStyle.js';
+import { modelChipSvg, nodeGlyph, nodeSkin } from '../svg/blockStyle.js';
+import { hueClass, hueInk, hueTint, type Hue } from '../svg/hues.js';
 import { revealAttr } from '../svg/reveal.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
-import { ensureGrid } from './autoLayout.js';
+import { autoDir, ensureGrid } from './autoLayout.js';
 
-type Kind = 'start' | 'end' | 'decision' | 'process' | 'agent' | 'llm' | 'tool' | 'human' | 'memory';
+type Kind = NonNullable<NonNullable<BlockDataMap['flow']['nodes']>[number]['kind']>;
 
 /**
  * AI-workflow kinds draw as steps with an eyebrow chip, so a RAG pipeline or a
- * multi-agent hand-off reads which step is a model, a tool, a person, or a
- * store without a legend lookup. `human` is a dashed boundary (a gate outside
- * the automation); `memory` takes the store fill.
+ * multi-agent hand-off reads which step is a model, a tool, a person, a
+ * check, or a store without a legend lookup. `human` is a dashed boundary (a
+ * gate outside the automation); `memory` takes the store outline.
  */
 const AI_CHIP: Readonly<Partial<Record<Kind, string>>> = {
   agent: 'AGENT',
@@ -38,7 +42,37 @@ const AI_CHIP: Readonly<Partial<Record<Kind, string>>> = {
   tool: 'TOOL',
   human: 'HUMAN',
   memory: 'MEMORY',
+  guard: 'GUARD',
+  eval: 'EVAL',
 };
+
+/** Legend wording per AI kind, in legend order. */
+const AI_LEGEND: ReadonlyArray<readonly [Kind, string]> = [
+  ['agent', 'autonomous step'],
+  ['llm', 'model call'],
+  ['tool', 'retrieval / API / code'],
+  ['guard', 'policy check'],
+  ['eval', 'scores the output'],
+  ['human', 'review gate'],
+  ['memory', 'store'],
+];
+
+/**
+ * The AI kinds drawn as the agent card (glyph, name, model chip) and the glyph
+ * each takes: the sparkle for agents and model calls, the shield for a guard,
+ * the gauge for an eval.
+ */
+const CARD_GLYPH: Readonly<Partial<Record<Kind, string>>> = {
+  agent: 'agent',
+  llm: 'agent',
+  guard: 'guard',
+  eval: 'eval',
+};
+
+/** The family hue of a flow kind — the AI kinds only; plain steps stay neutral. */
+function flowHue(kind: Kind): Hue | undefined {
+  return AI_CHIP[kind] !== undefined ? nodeSkin(kind).hue : undefined;
+}
 
 /**
  * Deck build order (`data-reveal`): a topological walk from the `start`
@@ -83,13 +117,76 @@ export function flowRevealOrder(
   return order;
 }
 
-const ERR_LABEL_RE = /^(no|fail|failed|error|reject|rejected)\b/i;
-
 /** Cell geometry: the node box is 150×52 inside a 160×64 cell; a decision diamond fills the cell. */
 const CELL_W = 160;
 const CELL_H = 64;
 const NODE_W = 150;
 const NODE_H = 52;
+
+/**
+ * Characters per line at the default 150px box: the agent-card name (one
+ * line), a step label (two lines, or one above a sublabel), a decision label
+ * (two lines inside the diamond — its slanted sides leave about 97px for a
+ * line at the default width), and a mono sublabel or model chip.
+ */
+const CARD_CHARS = 17;
+const STEP_CHARS = 20;
+const DECISION_CHARS = 14;
+const SUB_CHARS = 22;
+
+/** The fewest characters per line that fit `text` in `lines` lines (never below `base`). */
+function charsToFit(text: string, base: number, lines: number): number {
+  let c = base;
+  while (c < text.length && wrapText(text, c, Number.MAX_SAFE_INTEGER).length > lines) c++;
+  return c;
+}
+
+/** Characters per line a box of width `w` holds, from its budget at the default width. */
+function boxChars(base: number, w: number): number {
+  return Math.floor((base * w) / NODE_W + 1e-9);
+}
+
+/**
+ * Characters per line inside a decision diamond `w` wide. The text band of a
+ * diamond widens slower than the diamond (its slanted sides cut the corners),
+ * so a wider diamond gains 0.6 of the proportional characters.
+ */
+function diamondChars(w: number): number {
+  if (w <= CELL_W) return DECISION_CHARS;
+  return Math.floor(DECISION_CHARS * (1 + (w / CELL_W - 1) * DIAMOND_GAIN) + 1e-9);
+}
+const DIAMOND_GAIN = 0.6;
+
+/**
+ * The cell width that draws every label whole. Labels are never trimmed: when
+ * a name or sublabel needs more characters per line than the default box
+ * holds, the one cell width of the diagram grows (in 8px steps) until the
+ * widest single-cell node fits. One width for the whole grid keeps the Studio
+ * grid metadata valid. The inverse of {@link boxChars} and {@link diamondChars}.
+ */
+function fitCellW(
+  nodes: ReadonlyArray<{ readonly label: string; readonly kind?: Kind | undefined; readonly w?: number | undefined }>,
+): number {
+  const inset = CELL_W - NODE_W;
+  let need = CELL_W;
+  for (const n of nodes) {
+    if ((n.w ?? 1) !== 1) continue;
+    const kind = n.kind ?? 'process';
+    const nl = n.label.indexOf('\n');
+    const name = nl >= 0 ? n.label.slice(0, nl) : n.label;
+    const sub = nl >= 0 ? n.label.slice(nl + 1).replace(/\s+/g, ' ').trim() : '';
+    if (kind === 'decision') {
+      const c = charsToFit(name, DECISION_CHARS, 2);
+      need = Math.max(need, CELL_W * (1 + (c / DECISION_CHARS - 1) / DIAMOND_GAIN));
+      continue;
+    }
+    const card = CARD_GLYPH[kind] !== undefined;
+    const base = card ? CARD_CHARS : STEP_CHARS;
+    const c = charsToFit(name, base, card || sub.length > 0 ? 1 : 2);
+    need = Math.max(need, (NODE_W * c) / base + inset, (NODE_W * sub.length) / SUB_CHARS + inset);
+  }
+  return CELL_W + Math.ceil((need - CELL_W) / 8) * 8;
+}
 
 interface Rect {
   readonly x: number;
@@ -99,24 +196,36 @@ interface Rect {
 }
 
 /** The inner SVG + legend strip (no diagram frame). */
-function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: string } {
+function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: string; geometry: GeometryReport } {
   const edges = data.edges ?? [];
   const groups = data.groups ?? [];
   const rawNodes = data.nodes ?? [];
+  const dir = data.dir ?? 'LR';
   const quick = !(rawNodes.length > 0 && rawNodes.every((n) => n.col !== undefined && n.row !== undefined));
-  const nodes = ensureGrid(rawNodes, edges, data.dir ?? 'LR');
-  const cellW = CELL_W;
+  const nodes = ensureGrid(rawNodes, edges, dir);
+  const cellW = fitCellW(nodes);
   const cellH = CELL_H;
-  const gapX = 56;
-  const gapY = 48;
+  const cellOf = (id: string): (typeof nodes)[number] | undefined => nodes.find((n) => n.id === id);
+  // One column gap and one row gap for the whole grid, wide enough that every
+  // edge label sits on its own edge. A decision fills its cell, so an edge
+  // that touches one gets no slack from that end.
+  const inset = (id: string): Slack =>
+    cellOf(id)?.kind === 'decision' ? { x: 0, y: 0 } : { x: (CELL_W - NODE_W) / 2, y: (CELL_H - NODE_H) / 2 };
+  const { gapX, gapY } = gapsForLabels(edges, cellOf, dir, { gapX: 56, gapY: 48 }, (a, b) => ({
+    x: inset(a).x + inset(b).x,
+    y: inset(a).y + inset(b).y,
+  }));
   // Group outlines overshoot their cells (label headroom): grow the padding
   // to fit them ONLY when groups exist.
   // Declared group nesting (`parent`) grows the outermost panels outward; the
   // pads grow with them so a nested group never clips at the viewBox edge.
+  // A back edge loops around the outside of its row (column in TB): the pads
+  // on those sides make room for the loop and its label.
   const nestPad = nestingPads(groups);
-  const padX = (groups.length > 0 ? GROUP_PADS.padX : 22) + nestPad.padX;
-  const padTop = (groups.length > 0 ? GROUP_PADS.padTop : 22) + nestPad.padTop;
-  const padBot = (groups.length > 0 ? GROUP_PADS.padBot : 18) + nestPad.padBot;
+  const loop = hasBackEdge(edges, cellOf, dir) ? LOOP_PAD : 0;
+  const padX = (groups.length > 0 ? GROUP_PADS.padX : 22) + nestPad.padX + (dir === 'TB' ? loop : 0);
+  const padTop = (groups.length > 0 ? GROUP_PADS.padTop : 22) + nestPad.padTop + (dir === 'LR' ? loop : 0);
+  const padBot = (groups.length > 0 ? GROUP_PADS.padBot : 18) + nestPad.padBot + (dir === 'LR' ? loop : 0);
   const gx = groupExtent(groups);
   const cols = Math.max(1, ...nodes.map((n) => n.col + ((n.w ?? 1) - 1)), gx.cols);
   const rows = Math.max(1, ...nodes.map((n) => n.row), gx.rows);
@@ -132,25 +241,20 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
   const boxFor = (n: { col: number; row: number; w?: number | undefined; kind?: Kind | undefined }): Rect => {
     const c = cellFor(n);
     if ((n.kind ?? 'process') === 'decision') return c;
-    const dx = (cellW - NODE_W) / 2;
-    const dy = (cellH - NODE_H) / 2;
+    // A fixed inset, so a cell that grows to fit its labels grows the box too.
+    const dx = (CELL_W - NODE_W) / 2;
+    const dy = (CELL_H - NODE_H) / 2;
     return { x: c.x + dx, y: c.y + dy, w: c.w - dx * 2, h: NODE_H };
   };
-  const byId = new Map(nodes.map((n) => [n.id, n]));
   const width = padX * 2 + cols * cellW + (cols - 1) * gapX;
   const height = padTop + rows * cellH + (rows - 1) * gapY + padBot;
 
-  // Error edges: explicit kind, or a label that reads as the failure branch.
-  const isErrEdge = (e: { kind?: string | undefined; label?: string | undefined }): boolean =>
-    e.kind === 'error' || ERR_LABEL_RE.test(e.label ?? '');
-  // The accent: `end` nodes that no error edge reaches (and whose own label
-  // does not read as a failure). Zero accent is a valid outcome.
+  // Error edges: only the ones the author marks (`-x->` / `kind: error`).
+  const isErrEdge = (e: { kind?: string | undefined }): boolean => e.kind === 'error';
+  // The accent: `end` nodes that no error edge reaches. Zero accent is a
+  // valid outcome.
   const errTargets = new Set(edges.filter(isErrEdge).map((e) => e.to));
-  const accentIds = new Set(
-    nodes
-      .filter((n) => n.kind === 'end' && !errTargets.has(n.id) && !ERR_LABEL_RE.test(n.label))
-      .map((n) => n.id),
-  );
+  const accentIds = new Set(nodes.filter((n) => n.kind === 'end' && !errTargets.has(n.id)).map((n) => n.id));
 
   // Grid metadata for editors (Chiltepin Studio drag-to-connect): inert attrs
   // mirroring the layout constants plus each node's effective cell below.
@@ -159,26 +263,63 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
   let s = `<svg viewBox="0 0 ${width} ${height}"${a11y.attrs}${gridMeta}>${a11y.title}`;
 
   // Group panels — beneath edges and nodes. Only emitted when present.
-  if (groups.length > 0) s += gridGroupsSvg(groups, { xOf, yOf, cellW, cellH, gapX, gapY, skin: true });
+  if (groups.length > 0) {
+    s += gridGroupsSvg(groups, {
+      xOf,
+      yOf,
+      cellW,
+      cellH,
+      gapX,
+      gapY,
+      skin: true,
+      members: nodes.map((n) => ({ col: n.col, row: n.row, hue: flowHue(n.kind ?? 'process') })),
+    });
+  }
 
   const used = { plain: false, dashed: false, error: false, accent: false };
-  const pending: EdgeLabelPoint[] = [];
-  const lanes = edgeLanes(edges);
   const order = flowRevealOrder(nodes, edges);
   const stepOf = (id: string): number => order.get(id) ?? 0;
-  const entries = entryPortOffsets(edges, (id) => {
-    const n = byId.get(id);
-    return n !== undefined ? boxFor(n) : undefined;
-  });
-  s += `<g${bl('edges')}>`;
-  edges.forEach((e, ei) => {
-    const A = byId.get(e.from);
-    const B = byId.get(e.to);
-    if (!A || !B) return;
-    const p = ortho(boxFor(A), boxFor(B), lanes[ei] ?? 0, entries[ei] ?? 0);
+  // Error / accent / dashed per edge, and the deck step it reveals with.
+  const looks = edges.map((e) => {
     const isErr = isErrEdge(e);
     const isAccent = !isErr && accentIds.has(e.to);
     const isDashed = !isErr && e.kind === 'dashed';
+    return { isErr, isAccent, isDashed, reveal: Math.max(stepOf(e.from), stepOf(e.to)) };
+  });
+  // Every edge is routed around the nodes (never through one), edges sharing
+  // a side spread their ports, a back edge loops around its row, and every
+  // label sits on its own edge.
+  const bounds = { x: 0, y: 0, w: width, h: height };
+  const { routes, labels } = layoutEdges(
+    nodes.map((n) => {
+      const kind = n.kind ?? 'process';
+      const shape = kind === 'decision' ? 'diamond' : kind === 'start' || kind === 'end' ? 'round' : 'rect';
+      return { id: n.id, box: boxFor(n), shape };
+    }),
+    edges,
+    edges.map((e, ei) => {
+      const l = looks[ei];
+      return {
+        label: e.label,
+        err: l?.isErr === true,
+        accent: l?.isAccent === true,
+        path: `edges.${ei}`,
+        ...(l !== undefined ? { reveal: l.reveal } : {}),
+      };
+    }),
+    {
+      dir,
+      bounds,
+      obstacles: groupLabelBoxes(groups, { xOf, yOf, cellW, cellH, gapX, gapY }),
+      rails: groupPanelRects(groups, { xOf, yOf, cellW, cellH, gapX, gapY }),
+    },
+  );
+  s += `<g${bl('edges')}>`;
+  edges.forEach((e, ei) => {
+    const p = routes[ei];
+    const l = looks[ei];
+    if (p === undefined || l === undefined) return;
+    const { isErr, isAccent, isDashed, reveal } = l;
     const stroke = isErr ? 'var(--negative)' : isAccent ? 'var(--accent)' : 'var(--muted)';
     const marker = isErr ? 'skErr' : isAccent ? 'skAccent' : isDashed ? 'skOpen' : 'skArrow';
     const sw = isAccent ? 1.75 : 1.5;
@@ -187,17 +328,7 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
     else if (isAccent) used.accent = true;
     else if (isDashed) used.dashed = true;
     else used.plain = true;
-    const reveal = Math.max(stepOf(e.from), stepOf(e.to));
     s += `<path d="${p.d}" fill="none" stroke="${stroke}" stroke-width="${sw}"${dash} marker-end="url(#${marker})"${bp(`edges.${ei}`)}${revealAttr(reveal)}/>`;
-    pending.push({
-      lx: p.lx,
-      ly: p.ly,
-      ...(e.label !== undefined ? { label: e.label } : {}),
-      err: isErr,
-      accent: isAccent,
-      path: `edges.${ei}`,
-      reveal,
-    });
   });
   s += `</g>`; // close the edges list container (editors add via its chip)
 
@@ -211,10 +342,17 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
     const cy = r.y + r.h / 2;
     const accent = accentIds.has(n.id);
     const chip = AI_CHIP[kind];
+    const hue = flowHue(kind);
     const secondary = kind === 'start' || kind === 'memory';
     const stroke = accent ? 'var(--accent)' : secondary ? 'var(--rule-solid)' : 'var(--ink)';
     const sw = accent ? 1.5 : secondary ? 1 : 1.5;
-    const fill = accent ? 'var(--accent-tint)' : secondary ? 'var(--paper-2)' : 'var(--paper)';
+    const fill = accent
+      ? 'var(--accent-tint)'
+      : hue !== undefined
+        ? hueTint(hue)
+        : secondary
+          ? 'var(--paper-2)'
+          : 'var(--paper)';
     const dash = kind === 'human' ? ' stroke-dasharray="4 3"' : '';
     let shape: string;
     if (kind === 'decision') {
@@ -225,32 +363,32 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
       shape = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${dash}/>`;
     }
     if (chip !== undefined) {
-      shape += `<text x="${r.x + 8}" y="${r.y + 11}" class="blk-chip t-sub">${chip}</text>`;
+      shape += `<text x="${r.x + 8}" y="${r.y + 11}" class="blk-chip t-sub${accent ? ' c-accent' : hueClass(hue)}">${chip}</text>`;
     }
     // A label with a line break keeps its first line as the name and the
     // rest as a mono sublabel; otherwise the name wraps to two lines.
     const nl = n.label.indexOf('\n');
     const name = nl >= 0 ? n.label.slice(0, nl) : n.label;
     const sub = nl >= 0 ? n.label.slice(nl + 1).replace(/\s+/g, ' ').trim() : '';
-    const maxChars = kind === 'decision' ? 18 : 20;
+    // Line budgets scale with the drawn box, so a wider cell (or a node that
+    // spans columns) holds proportionally more characters per line.
+    const perPx = (base: number): number => boxChars(base, r.w);
+    const maxChars = kind === 'decision' ? diamondChars(r.w) : perPx(STEP_CHARS);
     const lines = sub.length > 0 ? wrapText(name, maxChars, 1) : wrapText(name, maxChars, 2);
     const tone = accent ? ' c-accent' : '';
     // A chip takes the top of the box; the label sits a little lower.
     const dy = chip !== undefined ? 4 : 0;
     let texts = '';
-    if (kind === 'agent' || kind === 'llm') {
-      // The agent card from `agentloop`: sparkle, name at the left, and the
-      // second label line as a mono model chip — so an orchestrator, a critic
-      // and a guard read as agents at a glance, without the loop layout.
-      const nm = wrapText(name, 17, 1)[0] ?? name;
-      texts = nodeGlyph('agent', r.x + 10, r.y + 19, accent ? 'var(--accent)' : 'var(--ink)');
+    const cardGlyph = CARD_GLYPH[kind];
+    if (cardGlyph !== undefined) {
+      // The agent card from `agentloop`: the kind's glyph, name at the left,
+      // and the second label line as a mono model chip — so an orchestrator,
+      // a critic and a guard read as agents at a glance, without the loop layout.
+      const nm = wrapText(name, perPx(CARD_CHARS), 1)[0] ?? name;
+      const gc = accent ? 'var(--accent)' : hue !== undefined ? hueInk(hue) : 'var(--ink)';
+      texts = nodeGlyph(cardGlyph, r.x + 10, r.y + 19, gc);
       texts += `<text x="${r.x + 30}" y="${r.y + 30}" class="al-name${tone}">${escapeHtml(nm)}</text>`;
-      if (sub.length > 0) {
-        const chipW = Math.min(r.w - 20, 12 + sub.length * 5.6);
-        texts +=
-          `<rect x="${r.x + 10}" y="${r.y + 36}" width="${chipW.toFixed(1)}" height="13" rx="3" fill="var(--paper)" stroke="var(--rule-solid)" stroke-width="1"/>` +
-          `<text x="${(r.x + 10 + chipW / 2).toFixed(1)}" y="${r.y + 45.5}" text-anchor="middle" class="al-chip">${escapeHtml(sub)}</text>`;
-      }
+      if (sub.length > 0) texts += modelChipSvg(r.x + 10, r.y + 36, sub, r.w - 20);
     } else if (sub.length > 0) {
       texts =
         `<text x="${cx}" y="${cy - 1 + dy}" class="fc-label t-name${tone}">${escapeHtml(lines[0] ?? name)}</text>` +
@@ -267,19 +405,24 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
   });
   s += `</g>`; // close the nodes list container
 
-  const { overlay, legend: steps } = edgeLabelLayer(pending, nodes.map((n) => boxFor(n)), { skin: true });
-  s += overlay; // labels on top, never crossed by a line
+  s += labels.overlay; // labels on top, never crossed by a line
   s += `</svg>`;
 
   const items: LegendItem[] = [];
   if (kindsUsed.has('start')) items.push({ swatch: 'node-fill2', label: 'start' });
   if (kindsUsed.has('process')) items.push({ swatch: 'node', label: 'step' });
   if (kindsUsed.has('decision')) items.push({ swatch: 'node', label: 'decision (diamond)' });
-  if (kindsUsed.has('agent')) items.push({ swatch: 'node', label: 'AGENT · autonomous step' });
-  if (kindsUsed.has('llm')) items.push({ swatch: 'node', label: 'LLM · model call' });
-  if (kindsUsed.has('tool')) items.push({ swatch: 'node', label: 'TOOL · retrieval / API / code' });
-  if (kindsUsed.has('human')) items.push({ swatch: 'node-dashed', label: 'HUMAN · review gate' });
-  if (kindsUsed.has('memory')) items.push({ swatch: 'node-fill2', label: 'MEMORY · store' });
+  for (const [k, label] of AI_LEGEND) {
+    if (!kindsUsed.has(k)) continue;
+    const hue = flowHue(k);
+    items.push({
+      swatch: 'chip',
+      chip: AI_CHIP[k] ?? k.toUpperCase(),
+      label,
+      ...(hue !== undefined ? { hue } : {}),
+      ...(k === 'human' ? { dashed: true } : {}),
+    });
+  }
   if (kindsUsed.has('end') && [...accentIds].length < nodes.filter((n) => n.kind === 'end').length) {
     items.push({ swatch: 'node', label: 'exit' });
   }
@@ -287,11 +430,28 @@ function renderFlowSvg(data: BlockDataMap['flow']): { svg: string; legend: strin
   if (used.dashed) items.push({ swatch: 'edge-dashed', label: 'optional' });
   if (used.error) items.push({ swatch: 'edge-error', label: 'error path' });
   if (accentIds.size > 0) items.push({ swatch: 'node-accent', label: 'happy path' });
-  return { svg: s + steps, legend: renderLegend(items) };
+  const geometry = geometryOf({
+    nodeWord: 'node',
+    edgeWord: 'edge',
+    nodes: nodes.map((n, ni) => ({ id: n.id, name: n.label.split('\n')[0] ?? n.id, path: `nodes.${ni}`, col: n.col, row: n.row, w: n.w })),
+    edges: edges.map((e, ei) => ({ from: e.from, to: e.to, label: e.label, path: `edges.${ei}` })),
+    routes,
+    fallbacks: labels.fallbackIndex,
+    labelBoxes: labels.boxes,
+    nodeBoxes: nodes.map((n) => boxFor(n)),
+    quick,
+    dir,
+  });
+  return { svg: s + labels.legend, legend: renderLegend(items), geometry };
+}
+
+/** Lays out a flow in the author's direction, or the one that fits the page (see `autoDir`). */
+function layoutFlow(data: BlockDataMap['flow']): ReturnType<typeof renderFlowSvg> {
+  return autoDir(data, data.nodes ?? [], renderFlowSvg, (r) => r.svg);
 }
 
 function renderFlowFrame(data: BlockDataMap['flow'], tag: string): string {
-  const { svg, legend } = renderFlowSvg(data);
+  const { svg, legend } = layoutFlow(data);
   return diagramFrame(
     {
       tag,
@@ -301,6 +461,11 @@ function renderFlowFrame(data: BlockDataMap['flow'], tag: string): string {
     },
     svg,
   );
+}
+
+/** Geometry report for a `flow` block (see `geometryReport`). */
+export function flowGeometry(data: BlockDataMap['flow']): GeometryReport {
+  return layoutFlow(data).geometry;
 }
 
 /**

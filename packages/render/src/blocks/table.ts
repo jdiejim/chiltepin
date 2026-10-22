@@ -67,5 +67,7 @@ export function renderTable(data: BlockDataMap['table']): string {
     .join('');
   const note =
     data.note !== undefined ? `<p class="tbl-note"${bp('note')}>${escapeHtml(data.note)}</p>` : '';
-  return `<table class="pres-table"><thead><tr>${head}</tr></thead><tbody${bl('rows')}>${body}</tbody></table>${note}`;
+  // The scroll box lets a wide table scroll sideways on a phone instead of
+  // pushing the page wider than the screen.
+  return `<div class="tbl-scroll"><table class="pres-table"><thead><tr>${head}</tr></thead><tbody${bl('rows')}>${body}</tbody></table></div>${note}`;
 }

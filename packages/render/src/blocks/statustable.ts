@@ -103,7 +103,7 @@ function renderTrackerBody(data: StatustableData): string {
     if (hasDue) cells.push(`<td${bp(`items.${i}.due`)}>${escapeHtml(it.due ?? '')}</td>`);
     h += `<tr${rowCls}${bp(`items.${i}`)}>${cells.join('')}</tr>`;
   }
-  return h + `</tbody></table>`;
+  return `<div class="stt-scroll">${h}</tbody></table></div>`;
 }
 
 export function renderStatustable(data: StatustableData): string {
@@ -189,9 +189,9 @@ export function renderStatustable(data: StatustableData): string {
 
   return (
     `<div class="stt">${desc}` +
-    `<div class="stt-wrap"><table class="stt-table"${bl('rows')}>` +
+    `<div class="stt-wrap"><div class="stt-scroll"><table class="stt-table"${bl('rows')}>` +
     `<thead><tr>${head}</tr></thead>` +
     `${groups}` +
-    `</table>${legend}</div></div>`
+    `</table></div>${legend}</div></div>`
   );
 }

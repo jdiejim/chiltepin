@@ -17,7 +17,7 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { wrapText } from '../svg/wrapText.js';
+import { cutTitle, fitStack, FONT, reportCut, type FittedStack } from '../svg/wrapText.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
@@ -64,6 +64,44 @@ const CHIP_LABEL: Record<string, string> = {
   STORE: 'store / state',
 };
 
+const NAME_LH = 14;
+const NOTE_LH = 12;
+/** Gap between the last name line and the first note line (14px baseline step, as before). */
+const NOTE_GAP = 2;
+/** Room a card keeps clear under its label block. */
+const BOTTOM = 6;
+/** Text inset from the card's left and right edges. */
+const INSET = 12;
+
+/** A card's name over its note, fitted to a card `w` × `h` (room below the chip). */
+function fitCard(n: Node, w: number, h: number): { fit: FittedStack; top: number; room: number } {
+  const top = ftSkin(n.kind).chip !== '' ? 18 : 8;
+  const room = h - top - BOTTOM;
+  const fit = fitStack(
+    { text: n.name, font: FONT.name, lineH: NAME_LH, maxLines: 3 },
+    n.note !== undefined ? { text: n.note, font: FONT.sub, lineH: NOTE_LH, maxLines: 3 } : undefined,
+    w - INSET * 2,
+    room,
+    NOTE_GAP,
+  );
+  return { fit, top, room };
+}
+
+/**
+ * The card size for a tree: 158 × 56 when every label fits; else wider (to
+ * a cap) until no name needs more than three lines, then taller until every
+ * name and note fits. One size for every card, so the tree stays a grid.
+ */
+function cardSize(nodes: readonly Node[]): { w: number; h: number } {
+  let w = 158;
+  const lines = (width: number): number =>
+    Math.max(0, ...nodes.map((n) => fitCard(n, width, 1000).fit.head.lines.length));
+  while (w < 206 && (lines(w) > 2 || nodes.some((n) => fitCard(n, w, 1000).fit.head.truncated))) w += 8;
+  let h = 56;
+  while (h < 132 && nodes.some((n) => { const c = fitCard(n, w, h); return c.fit.need > c.room + 0.5; })) h += 4;
+  return { w, h };
+}
+
 export function renderFrontend(data: BlockDataMap['frontend']): string {
   const nodes = data.nodes ?? [];
   const byId = new Map<string, Node>();
@@ -102,10 +140,10 @@ export function renderFrontend(data: BlockDataMap['frontend']): string {
   };
   for (const r of roots) dfs(r, 0);
 
-  const nodeW = 158;
-  const nodeH = 56;
+  // Cards grow (one size for all) until every name and note fits.
+  const { w: nodeW, h: nodeH } = cardSize(nodes);
   const gapX = 24;
-  const levelGap = 96;
+  const levelGap = nodeH + 40;
   const padX = 24;
   const padTop = 18;
   const padBot = 18;
@@ -128,8 +166,7 @@ export function renderFrontend(data: BlockDataMap['frontend']): string {
     s += `<path d="M ${pcx} ${pby} V ${midY} H ${ccx} V ${cty}" fill="none" stroke="var(--muted)" stroke-width="1.25"/>`;
   }
 
-  // nodes — wrap name to fit inside the box (~158px, ~20 chars per line).
-  // With a note: single-line name. Without a note: up to two lines.
+  // nodes — name and note fitted to the card (see `cardSize`).
   const chipsUsed = new Set<string>();
   let dashedUsed = false;
   let inactiveUsed = false;
@@ -153,22 +190,31 @@ export function renderFrontend(data: BlockDataMap['frontend']): string {
       sk.chip !== ''
         ? `<text x="${x + 12}" y="${y + 13}" class="t-eyebrow${chipTone}">${sk.chip}</text>`
         : '';
-    const labelX = x + 12;
-    const lines = wrapText(n.name, 19, n.note !== undefined ? 1 : 2);
-    // Centre the name (+ note) block in the room below the chip.
-    const top = sk.chip !== '' ? 18 : 8;
-    const blockH = lines.length * 14 + (n.note !== undefined ? 14 : 0);
-    const startY = y + top + (nodeH - top - blockH) / 2 + 11;
-    const labelTexts = lines
+    const labelX = x + INSET;
+    // Name over note, centred in the room below the chip. A long component
+    // name breaks at its camelCase joints; the card grew for both, and what
+    // still does not fit ends with "…" (full text in the title).
+    const { fit, top } = fitCard(n, nodeW, nodeH);
+    if (fit.head.truncated) {
+      reportCut({ path: `nodes.${ni}.name`, field: 'name', full: fit.head.full, hint: 'Shorten the component `name`.' });
+    }
+    if (fit.tail.truncated) {
+      reportCut({ path: `nodes.${ni}.note`, owner: n.name, field: 'note', full: fit.tail.full, hint: 'Shorten `note`, and put the rest in the prose.' });
+    }
+    const startY = y + top + (nodeH - top - fit.height) / 2 + 11;
+    const labelTexts = fit.head.lines
       .map(
         (ln, j) =>
-          `<text x="${labelX}" y="${(startY + j * 14).toFixed(1)}" class="t-name${accent ? ' c-accent' : ''}">${escapeHtml(ln)}</text>`,
+          `<text x="${labelX}" y="${(startY + j * NAME_LH).toFixed(1)}" class="t-name${accent ? ' c-accent' : ''}">${j === 0 ? cutTitle(fit.head) : ''}${escapeHtml(ln)}</text>`,
       )
       .join('');
-    const note =
-      n.note !== undefined
-        ? `<text x="${labelX}" y="${(startY + lines.length * 14).toFixed(1)}" class="t-sub">${escapeHtml(n.note)}</text>`
-        : '';
+    const noteY0 = startY + (fit.head.lines.length - 1) * NAME_LH + NOTE_GAP + NOTE_LH;
+    const note = fit.tail.lines
+      .map(
+        (ln, j) =>
+          `<text x="${labelX}" y="${(noteY0 + j * NOTE_LH).toFixed(1)}" class="t-sub">${j === 0 ? cutTitle(fit.tail) : ''}${escapeHtml(ln)}</text>`,
+      )
+      .join('');
     s += `<g${bp(`nodes.${ni}`)}>` + cardSvg + chip + labelTexts + note + `</g>`;
   });
   s += `</g>`; // close the nodes list container

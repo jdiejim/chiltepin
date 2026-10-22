@@ -5,11 +5,13 @@
  * left-side row header and the slice's cards stacked vertically under the
  * backbone step they belong to.
  *
- * Layout is plain HTML flex rows with fixed column widths, so columns align
- * across bands, rows grow with their tallest cell, and nothing can overlap.
- * The whole grid scrolls horizontally inside its own container past ~5
- * columns; the slice-label gutter is sticky-left and the backbone row is
- * sticky-top (pure CSS), so cards keep their context on a long scroll.
+ * Layout is plain HTML flex rows whose step columns share the row equally
+ * (`flex: 1 1 0`) down to a {@link COL_MIN} floor, so columns align across
+ * bands, fill the page when it is wide, rows grow with their tallest cell,
+ * and nothing can overlap. Only when the floor no longer fits does the grid
+ * scroll horizontally inside its own container; the slice-label gutter is
+ * sticky-left and the backbone row is sticky-top (pure CSS), so cards keep
+ * their context on a long scroll.
  * Card titles clamp to two lines with an ellipsis (CSS); any card that can
  * hit the clamp carries its full text in a `title` attribute.
  */
@@ -19,8 +21,8 @@ import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 
-/** Fixed card-column width (px) — alignment across bands depends on it. */
-const COL_W = 170;
+/** The narrowest a step column may get (px) before the grid scrolls; `css.ts` carries the same floor. */
+const COL_MIN = 132;
 /** Fixed slice-label column width (px). */
 const LABEL_W = 128;
 
@@ -39,7 +41,7 @@ function asCard(c: Card): { title: string; tag?: string | undefined } {
 
 export function renderStorymap(data: BlockDataMap['storymap']): string {
   const n = data.backbone.length;
-  const rowW = LABEL_W + n * COL_W;
+  const rowW = LABEL_W + n * COL_MIN;
 
   // Backbone header row: one paper step card per activity — an eyebrow with
   // the step number, the activity as the name, the note as a sublabel.

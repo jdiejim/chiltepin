@@ -43,7 +43,20 @@ interface FrameOptions {
 /** Drawings wider than this (in viewBox units) scroll instead of shrinking. */
 const WIDE_STAGE = 1600;
 
+/**
+ * The smallest scale a drawing may shrink to before its stage scrolls
+ * sideways instead. At 0.62 a 13px node name still renders at 8px on a
+ * phone; below that the labels stop being readable.
+ */
+export const MIN_STAGE_SCALE = 0.62;
+
 const VIEWBOX_RE = /<svg\b[^>]*\bviewBox="-?[\d.]+ -?[\d.]+ ([\d.]+) [\d.]+"[^>]*>/;
+
+/** The `viewBox` width of the first `<svg>` in `markup` (0 when there is none). */
+export function svgWidth(markup: string): number {
+  const m = VIEWBOX_RE.exec(markup);
+  return m?.[1] !== undefined ? Number(m[1]) : 0;
+}
 
 /**
  * The drawing's stage: the first `<svg viewBox>` in `inner` is wrapped in
@@ -65,10 +78,14 @@ function stageSvg(inner: string): string {
   // ~1600 units that means 10px labels at half size, unreadable. Such a
   // drawing keeps its natural width and the stage scrolls sideways instead;
   // print falls back to fit-to-page (see the print rules in css.ts).
+  // Every other drawing shrinks to fit, but never below MIN_STAGE_SCALE: on
+  // a narrow screen the stage scrolls (with an edge fade) instead of drawing
+  // 5px labels. Print and slides drop the floor (css.ts).
   const wide = w > WIDE_STAGE;
+  const floor = Math.round(w * MIN_STAGE_SCALE);
   const capped = wide
     ? `${tag.slice(0, -1)} style="width:calc(${w}px * var(--scale,1));max-width:none">`
-    : `${tag.slice(0, -1)} style="max-width:min(100%,calc(${w}px * var(--scale,1)))">`;
+    : `${tag.slice(0, -1)} style="max-width:min(100%,calc(${w}px * var(--scale,1)));min-width:${floor}px">`;
   const end = close + '</svg>'.length;
   return (
     inner.slice(0, m.index) +
@@ -78,6 +95,23 @@ function stageSvg(inner: string): string {
     `</div>` +
     inner.slice(end)
   );
+}
+
+/** How every framed block's HTML starts: the card, then its head row. */
+const FRAME_HEAD = '<div class="diagram"><div class="diagram-head">';
+
+/**
+ * Puts a figure caption (a pre-rendered `.diagram-title` span) into the head
+ * row of a framed block — the slot a page-level title fills. Returns
+ * `undefined` when `html` is not a frame, or when its head already carries a
+ * title; the caller then sets the caption above the block instead.
+ */
+export function withFrameCaption(html: string, captionHtml: string): string | undefined {
+  if (!html.startsWith(FRAME_HEAD)) return undefined;
+  const rest = html.slice(FRAME_HEAD.length);
+  const headEnd = rest.indexOf('</div>');
+  if (headEnd < 0 || rest.slice(0, headEnd).includes('diagram-title')) return undefined;
+  return FRAME_HEAD + captionHtml + rest;
 }
 
 /** Wraps the given inner HTML in a `.diagram` card. */
@@ -257,10 +291,15 @@ export const SECTION_LABEL: Record<BlockType, string> = {
 export function sectionLabelFor(seg: {
   readonly kind: BlockType;
   readonly sourceType?: string;
+  readonly data?: unknown;
 }): string {
   if (seg.sourceType !== undefined) {
     const alias = BLOCK_ALIASES[seg.sourceType];
     if (alias !== undefined) return alias.sectionLabel;
+  }
+  // `felogic` draws backend logic too: `variant: be` is the former `belogic`.
+  if (seg.kind === 'felogic' && (seg.data as { variant?: unknown } | null | undefined)?.variant === 'be') {
+    return 'Backend logic';
   }
   return SECTION_LABEL[seg.kind];
 }

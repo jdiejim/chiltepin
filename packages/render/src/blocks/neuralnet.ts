@@ -18,9 +18,8 @@
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
-import { wrapText } from '../svg/wrapText.js';
+import { cutTitle, ellipsize, fitText, FONT, type Wrapped } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 
@@ -35,51 +34,69 @@ const STEP = 24;
 /** Extra vertical room the ellipsis takes between the last two units. */
 const ELLIPSIS_GAP = 18;
 const COL_W = 124;
+/** The widest a column grows so its label and note fit without a cut. */
+const COL_W_MAX = 172;
+/** The most lines a layer label, and its note, take before they cut. */
+const LABEL_LINES = 3;
+const NOTE_LINES = 2;
 const PAD_X = 30;
 const PAD_TOP = 22;
 const LABEL_GAP = 26;
 const LINE_H = 14;
 const SUB_H = 13;
 
-/** One unit glyph per kind: the shape and the fill/stroke it takes. */
-function unitGlyph(kind: Kind, cx: number, cy: number): string {
+/**
+ * One unit glyph per kind: the shape and the fill/stroke it takes, at radius
+ * `r`. The legend draws its swatches with this same function at a smaller
+ * radius, so a swatch is always a small copy of the unit it names.
+ */
+export function unitGlyph(kind: Kind, cx: number, cy: number, r: number = R): string {
   const hollow = 'fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"';
   const filled = 'fill="var(--muted)" stroke="var(--muted)" stroke-width="1"';
   const inactive = 'fill="var(--paper-2)" stroke="var(--rule-solid)" stroke-width="1"';
+  const n = (v: number): string => String(Math.round(v * 100) / 100);
   switch (kind) {
     case 'input':
     case 'output':
-      return `<circle cx="${cx}" cy="${cy}" r="${R}" ${hollow}/>`;
+      return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" ${hollow}/>`;
     case 'conv':
-      return `<rect x="${cx - R + 1}" y="${cy - R + 1}" width="${2 * R - 2}" height="${2 * R - 2}" ${filled}/>`;
+      return `<rect x="${n(cx - r + 1)}" y="${n(cy - r + 1)}" width="${n(2 * r - 2)}" height="${n(2 * r - 2)}" ${filled}/>`;
     case 'pool':
-      return `<rect x="${cx - R + 1}" y="${cy - R + 1}" width="${2 * R - 2}" height="${2 * R - 2}" rx="4" ${inactive}/>`;
+      return `<rect x="${n(cx - r + 1)}" y="${n(cy - r + 1)}" width="${n(2 * r - 2)}" height="${n(2 * r - 2)}" rx="${n(r / 2)}" ${inactive}/>`;
     case 'attention':
-      return `<path d="M${cx} ${cy - R - 1} L${cx + R + 1} ${cy} L${cx} ${cy + R + 1} L${cx - R - 1} ${cy} z" ${filled}/>`;
+      return `<path d="M${n(cx)} ${n(cy - r - 1)} L${n(cx + r + 1)} ${n(cy)} L${n(cx)} ${n(cy + r + 1)} L${n(cx - r - 1)} ${n(cy)} z" ${filled}/>`;
     case 'norm':
-      return `<circle cx="${cx}" cy="${cy}" r="${R}" ${inactive}/>`;
+      return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" ${inactive}/>`;
     case 'dropout':
-      return `<circle cx="${cx}" cy="${cy}" r="${R}" fill="var(--paper)" stroke="var(--rule-solid)" stroke-width="1" stroke-dasharray="3 2"/>`;
+      return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" fill="var(--paper)" stroke="var(--rule-solid)" stroke-width="1" stroke-dasharray="3 2"/>`;
     case 'recurrent':
-      return `<circle cx="${cx}" cy="${cy}" r="${R}" ${filled}/><circle cx="${cx}" cy="${cy}" r="3" fill="var(--paper)"/>`;
+      return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" ${filled}/><circle cx="${n(cx)}" cy="${n(cy)}" r="${n((r * 3) / 8)}" fill="var(--paper)"/>`;
     case 'embedding':
     case 'dense':
-      return `<circle cx="${cx}" cy="${cy}" r="${R}" ${filled}/>`;
+      return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" ${filled}/>`;
   }
 }
 
-const KIND_LEGEND: Record<Kind, LegendItem> = {
-  input: { swatch: 'node-dot', label: 'input' },
-  output: { swatch: 'node-dot', label: 'output' },
-  dense: { swatch: 'node-dot', label: 'dense', fill: 'var(--muted)', stroke: 'var(--muted)' },
-  embedding: { swatch: 'node-dot', label: 'embedding', fill: 'var(--muted)', stroke: 'var(--muted)' },
-  recurrent: { swatch: 'node-dot', label: 'recurrent', fill: 'var(--muted)', stroke: 'var(--muted)' },
-  conv: { swatch: 'fill', label: 'conv', fill: 'var(--muted)' },
-  pool: { swatch: 'node-fill2', label: 'pool' },
-  attention: { swatch: 'node-dot', label: 'attention', fill: 'var(--muted)', stroke: 'var(--muted)' },
-  norm: { swatch: 'node-dot', label: 'norm', fill: 'var(--paper-2)', stroke: 'var(--rule-solid)' },
-  dropout: { swatch: 'node-dot', label: 'dropout', stroke: 'var(--rule-solid)', dash: '3 2' },
-};
+/** The legend swatch box (the shared `.lg-sw` size) and the unit radius drawn in it. */
+const SW_W = 30;
+const SW_H = 14;
+const SW_R = 5.5;
+
+/**
+ * The legend strip, one item per kind present, each swatch drawn by
+ * {@link unitGlyph} — the shared strip's markup, with the network's own
+ * glyphs (a diamond for attention, a square for conv, a ring for recurrent).
+ */
+function kindLegend(kinds: readonly Kind[]): string {
+  if (kinds.length < 2) return '';
+  const items = kinds
+    .map(
+      (k) =>
+        `<span class="lg-item"><svg class="lg-sw" viewBox="0 0 ${SW_W} ${SW_H}" width="${SW_W}" height="${SW_H}" aria-hidden="true">${unitGlyph(k, SW_W / 2, SW_H / 2, SW_R)}</svg><span class="lg-label">${escapeHtml(k)}</span></span>`,
+    )
+    .join('');
+  return `<div class="diagram-legend"><span class="lg-title t-eyebrow">Legend</span>${items}</div>`;
+}
 
 /** Infers the kind of a layer that names none: first is input, last is output, the rest dense. */
 function kindOf(l: Layer, i: number, n: number): Kind {
@@ -110,8 +127,34 @@ export function renderNeuralnet(data: BlockDataMap['neuralnet']): string {
   const tallest = Math.max(...layers.map((_, i) => colH(i)));
   const midY = PAD_TOP + tallest / 2;
   const kinds = layers.map((l, i) => kindOf(l, i, n));
-  const labelLines = layers.map((l) => wrapText(l.label, 16, 2));
-  const maxLabel = Math.max(1, ...labelLines.map((ls) => ls.length));
+  // Columns widen (in 8px steps, up to COL_W_MAX) until every label fits in
+  // LABEL_LINES lines and every note in NOTE_LINES; past that, text cuts.
+  const fitsAt = (w: number): boolean =>
+    layers.every(
+      (l) =>
+        !fitText(l.label, { width: w - 10, font: FONT.name, maxLines: LABEL_LINES }).truncated &&
+        !fitText(l.note, { width: w - 8, font: FONT.sub, maxLines: NOTE_LINES }).truncated &&
+        !ellipsize(l.activation, w - 8, FONT.sub).truncated,
+    );
+  let colW = COL_W;
+  while (colW < COL_W_MAX && !fitsAt(colW)) colW += 8;
+  const labelLines: Wrapped[] = layers.map((l, i) =>
+    fitText(l.label, {
+      width: colW - 10,
+      font: FONT.name,
+      maxLines: LABEL_LINES,
+      report: { path: `layers.${i}.label`, field: 'label', hint: 'Shorten the layer `label`; put the detail in `note`.' },
+    }),
+  );
+  const noteLines: Wrapped[] = layers.map((l, i) =>
+    fitText(l.note, {
+      width: colW - 8,
+      font: FONT.sub,
+      maxLines: NOTE_LINES,
+      report: { path: `layers.${i}.note`, owner: l.label, field: 'note', hint: 'Shorten the layer `note`.' },
+    }),
+  );
+  const maxLabel = Math.max(1, ...labelLines.map((w) => w.lines.length));
 
   /** Centre y of unit `k` (0-based, top to bottom) in layer `i`. */
   const unitY = (i: number, k: number): number => {
@@ -120,13 +163,13 @@ export function renderNeuralnet(data: BlockDataMap['neuralnet']): string {
     const extra = truncated[i] === true && k === d - 1 ? ELLIPSIS_GAP : 0;
     return top + k * STEP + extra;
   };
-  const colX = (i: number): number => PAD_X + COL_W / 2 + i * COL_W;
+  const colX = (i: number): number => PAD_X + colW / 2 + i * colW;
 
   const textTop = PAD_TOP + tallest + LABEL_GAP;
-  const subRows = (l: Layer): number =>
-    (l.units !== undefined ? 1 : 0) + (l.activation !== undefined ? 1 : 0) + (l.note !== undefined ? 1 : 0);
+  const subRows = (l: Layer, i: number): number =>
+    (l.units !== undefined ? 1 : 0) + (l.activation !== undefined ? 1 : 0) + (noteLines[i]?.lines.length ?? 0);
   const maxSub = Math.max(0, ...layers.map(subRows));
-  const width = PAD_X * 2 + n * COL_W;
+  const width = PAD_X * 2 + n * colW;
   const height = textTop + maxLabel * LINE_H + maxSub * SUB_H + 14;
 
   const a11y = svgName('Neural network', data.title, [countPhrase(n, 'layer')]);
@@ -164,11 +207,11 @@ export function renderNeuralnet(data: BlockDataMap['neuralnet']): string {
       const mid = (yA + yB) / 2;
       g += `<g fill="var(--muted)" data-decorative="1"><circle cx="${cx}" cy="${mid - 5}" r="1.2"/><circle cx="${cx}" cy="${mid}" r="1.2"/><circle cx="${cx}" cy="${mid + 5}" r="1.2"/></g>`;
     }
-    const lines = labelLines[i] ?? [];
+    const label = labelLines[i];
     let ty = textTop;
     g += `<g${bp(`layers.${i}.label`)}>`;
-    lines.forEach((ln, li) => {
-      g += `<text x="${cx}" y="${ty + li * LINE_H}" class="t-name" text-anchor="middle">${escapeHtml(ln)}</text>`;
+    (label?.lines ?? []).forEach((ln, li) => {
+      g += `<text x="${cx}" y="${ty + li * LINE_H}" class="t-name" text-anchor="middle">${li === 0 && label !== undefined ? cutTitle(label) : ''}${escapeHtml(ln)}</text>`;
     });
     g += `</g>`;
     ty += maxLabel * LINE_H;
@@ -177,21 +220,29 @@ export function renderNeuralnet(data: BlockDataMap['neuralnet']): string {
       ty += SUB_H;
     }
     if (l.activation !== undefined) {
-      g += `<text x="${cx}" y="${ty}" class="t-sub" text-anchor="middle"${bp(`layers.${i}.activation`)}>${escapeHtml(l.activation)}</text>`;
+      const act = ellipsize(l.activation, colW - 8, FONT.sub, {
+        path: `layers.${i}.activation`,
+        owner: l.label,
+        field: 'activation',
+        hint: 'Shorten `activation` to the function name.',
+      });
+      g += `<text x="${cx}" y="${ty}" class="t-sub" text-anchor="middle"${bp(`layers.${i}.activation`)}>${cutTitle(act)}${escapeHtml(act.lines[0] ?? '')}</text>`;
       ty += SUB_H;
     }
-    if (l.note !== undefined) {
-      const note = wrapText(l.note, 18, 1)[0] ?? '';
-      const title = note !== l.note ? `<title>${escapeHtml(l.note)}</title>` : '';
-      g += `<text x="${cx}" y="${ty}" class="t-sub c-soft" text-anchor="middle"${bp(`layers.${i}.note`)}>${title}${escapeHtml(note)}</text>`;
+    const note = noteLines[i];
+    if (note !== undefined && note.lines.length > 0) {
+      const texts = note.lines.map(
+        (ln, li) =>
+          `<text x="${cx}" y="${ty + li * SUB_H}" class="t-sub c-soft" text-anchor="middle"${note.lines.length === 1 ? bp(`layers.${i}.note`) : ''}>${li === 0 ? cutTitle(note) : ''}${escapeHtml(ln)}</text>`,
+      );
+      g += note.lines.length === 1 ? texts.join('') : `<g${bp(`layers.${i}.note`)}>${texts.join('')}</g>`;
     }
     g += `</g>`;
     s += g;
   });
   s += `</g></svg>`;
 
-  const items: LegendItem[] = [...kindsUsed].map((k) => KIND_LEGEND[k]);
-  const legend = renderLegend(items);
+  const legend = kindLegend([...kindsUsed]);
   const desc =
     data.description !== undefined && data.lede !== undefined
       ? `${data.description} ${data.lede}`

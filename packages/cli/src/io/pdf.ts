@@ -121,22 +121,27 @@ export async function isChromiumAvailable(): Promise<boolean> {
  */
 export async function toPdf(input: Document | string, opts: PdfOptions = {}): Promise<Uint8Array> {
   const html = typeof input === 'string' ? input : renderDocument(input);
+  const title = typeof input === 'string' ? titleOf(input) : (input.meta?.title ?? 'Untitled');
   const pw = await loadPlaywright();
   const browser = await launchChromium(pw, opts);
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle' });
+    // The page's own `@page` rule (A4, with margins for the running header and
+    // footer) sets the sheet. A custom pixel width or another named format
+    // overrides it here, so the CSS size never fights the option.
+    const size = sheetSize(opts);
+    if (size !== undefined) await page.addStyleTag({ content: `@page{size:${size};}` });
     const buffer = await page.pdf({
-      // A custom pixel width wins over the named format (Playwright ignores
-      // `format` when width/height are given): portrait A-series proportions
-      // keep the page shape familiar at every preset.
-      ...(opts.pageWidthPx !== undefined
-        ? {
-            width: `${String(opts.pageWidthPx)}px`,
-            height: `${String(Math.round(opts.pageWidthPx * Math.SQRT2))}px`,
-          }
-        : { format: opts.format ?? 'A4' }),
+      preferCSSPageSize: true,
       printBackground: true,
+      // Running header and footer: the doc title, and "page X / Y".
+      displayHeaderFooter: true,
+      headerTemplate: headerTemplate(title),
+      footerTemplate: FOOTER_TEMPLATE,
+      // PDF bookmarks from the headings, and a tagged (accessible) PDF.
+      outline: true,
+      tagged: true,
       ...(opts.margin !== undefined ? { margin: opts.margin } : {}),
     });
     return new Uint8Array(buffer);
@@ -146,14 +151,67 @@ export async function toPdf(input: Document | string, opts: PdfOptions = {}): Pr
 }
 
 /**
+ * The CSS `@page` size an option asks for, or `undefined` to keep the page's
+ * own A4. A custom pixel width keeps portrait A-series proportions.
+ */
+export function sheetSize(opts: Pick<PdfOptions, 'format' | 'pageWidthPx'>): string | undefined {
+  if (opts.pageWidthPx !== undefined) {
+    return `${String(opts.pageWidthPx)}px ${String(Math.round(opts.pageWidthPx * Math.SQRT2))}px`;
+  }
+  if (opts.format !== undefined && opts.format !== 'A4') return opts.format;
+  return undefined;
+}
+
+/** The `<title>` of a rendered page (for the running header of a pre-rendered input). */
+function titleOf(html: string): string {
+  const m = /<title>([^<]*)<\/title>/.exec(html);
+  return m?.[1] !== undefined ? decodeEntities(m[1]) : '';
+}
+
+function decodeEntities(s: string): string {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
+function escapeText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Chromium draws the header and footer outside the page's CSS, so they carry
+ * their own small inline styles: 8px muted type inside the `@page` margins.
+ */
+const RUNNING_STYLE =
+  "font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:8.5px;" +
+  'letter-spacing:.02em;color:rgb(95,104,118);width:100%;margin:0 14mm;display:flex;justify-content:space-between;';
+
+/** The running header: the document title, left. */
+export function headerTemplate(title: string): string {
+  return `<div style="${RUNNING_STYLE}"><span>${escapeText(title)}</span><span></span></div>`;
+}
+
+/** The running footer: "page X / Y", right. */
+export const FOOTER_TEMPLATE =
+  `<div style="${RUNNING_STYLE}"><span></span>` +
+  `<span>page <span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
+
+/**
  * Launches headless Chromium. If the browser binary is missing, either
  * auto-installs it (when `opts.autoInstallBrowser`) and retries, or throws a
  * clear, actionable error with the exact command to run.
  *
- * Exported for the other Chromium-backed exporter ({@link ../pptx.js toPptx});
- * not part of the public CLI surface.
+ * Exported for the other Chromium-backed exporter (`shots.ts`); not part of
+ * the public CLI surface.
  */
-async function launchChromium(pw: PlaywrightModule, opts: PdfOptions): Promise<Playwright.Browser> {
+export async function launchChromium(
+  pw: PlaywrightModule,
+  opts: Pick<PdfOptions, 'autoInstallBrowser' | 'log'>,
+): Promise<Playwright.Browser> {
+  // `CHILTEPIN_CHROME` points at a Chromium binary already on the machine
+  // (CI images, agent sandboxes) and skips the managed download.
+  const executablePath = process.env.CHILTEPIN_CHROME;
+  if (executablePath !== undefined && executablePath.length > 0) {
+    return await pw.chromium.launch({ headless: true, executablePath });
+  }
   try {
     return await pw.chromium.launch({ headless: true });
   } catch (err) {
@@ -171,8 +229,8 @@ async function launchChromium(pw: PlaywrightModule, opts: PdfOptions): Promise<P
   }
 }
 
-/** Lazy Playwright import shared by the PDF and PPTX exporters. */
-async function loadPlaywright(): Promise<PlaywrightModule> {
+/** Lazy Playwright import shared by the PDF exporter and diagram snapshots. */
+export async function loadPlaywright(): Promise<PlaywrightModule> {
   try {
     return await import('playwright');
   } catch (err) {

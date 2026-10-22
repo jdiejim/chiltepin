@@ -67,6 +67,12 @@ export const messages = {
       hint: 'Delete the opener. Start the sentence with the fact it carries.',
     };
   },
+  metaPhrase(phrase: string): CheckMessage {
+    return {
+      message: `Meta phrase: "${phrase}". The reader never saw the request or the list it names.`,
+      hint: 'State the fact itself. If it is a guess, write it as an assumption, for example "This doc assumes a polling trigger."',
+    };
+  },
   termDrift(word: string, span: string, term: string): CheckMessage {
     return {
       message: `Term drift: "${word}" appears in "${span}". The glossary approves "${term}".`,
@@ -177,6 +183,33 @@ const GERUND_SUBJECTS = new Set([
 
 export type TenseForm = 'perfect' | 'progressive';
 
+/** Units a `for <duration>` phrase counts in. */
+const DURATION_UNITS = new Set([
+  'second', 'seconds', 'sec', 'secs', 'minute', 'minutes', 'min', 'mins', 'hour', 'hours', 'hr', 'hrs',
+  'day', 'days', 'week', 'weeks', 'month', 'months', 'year', 'years', 'quarter', 'quarters',
+  'sprint', 'sprints', 'release', 'releases', 'deploy', 'deploys', 'run', 'runs', 'cycle', 'cycles',
+]);
+/** A compact duration token: `40m`, `3h`, `2d`, `90s`, `500ms`. */
+const DURATION_TOKEN = /^\d+(?:\.\d+)?(?:ms|s|m|min|h|hr|d|w)$/;
+
+/**
+ * True when the present perfect at `i` is anchored in time: `since <time or
+ * event>` or `for <duration>` follows it ("The ledger has been failing since
+ * 09:00.", "The queue has grown for 40 minutes."). Incident and status prose
+ * needs that form; the style guide allows it there.
+ */
+function anchoredInTime(toks: readonly string[], i: number): boolean {
+  for (let j = i + 2; j < toks.length; j++) {
+    if (toks[j] === 'since' && j + 1 < toks.length) return true;
+    if (toks[j] !== 'for') continue;
+    for (let k = j + 1; k <= j + 4 && k < toks.length; k++) {
+      const t = toks[k] as string;
+      if (DURATION_UNITS.has(t) || DURATION_TOKEN.test(t)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Detects a perfect (has/have/had + participle) or progressive (be-aux +
  * `-ing` token directly after the auxiliary) construction. Guarded by the
@@ -186,11 +219,22 @@ export type TenseForm = 'perfect' | 'progressive';
  */
 export function findTense(sentence: string): TenseForm | undefined {
   const toks = tokens(sentence);
+  // The present perfect anchored in time (`has been failing since 09:00`,
+  // `has retried 3 times since the deploy`, `has grown for 40 minutes`) is
+  // allowed, and so is the `been <-ing>` it carries. `had` is not exempt.
+  let exemptBeen = -1;
   for (let i = 0; i < toks.length - 1; i++) {
     const aux = toks[i] as string;
     const next = toks[i + 1] as string;
-    if (PERFECT_AUX.has(aux) && isPerfectParticiple(next)) return 'perfect';
+    if (PERFECT_AUX.has(aux) && isPerfectParticiple(next)) {
+      if (aux !== 'had' && anchoredInTime(toks, i)) {
+        if (next === 'been') exemptBeen = i + 1;
+        continue;
+      }
+      return 'perfect';
+    }
     if (
+      i !== exemptBeen &&
       PROGRESSIVE_AUX.has(aux) &&
       next.length >= 5 &&
       next.endsWith('ing') &&
@@ -230,6 +274,32 @@ export function findFillerOpener(sentence: string): string | undefined {
     if (!lower.startsWith(opener.toLowerCase())) continue;
     const after = s[opener.length];
     if (after === undefined || !/[\p{L}\p{N}]/u.test(after)) return opener;
+  }
+  return undefined;
+}
+
+/* ── Meta phrases ──────────────────────────────────────────────────────── */
+
+/**
+ * Phrases that point at text the reader never saw: the writer's brief
+ * ("The request names no model"), or a list the writer was told to end with.
+ * Anywhere in a sentence, case-insensitive. "The request" alone is a normal
+ * HTTP noun ("the request body"), so it counts only with a verb that reports
+ * what the brief said or left out.
+ */
+const META_PHRASES: readonly RegExp[] = [
+  /\bthe request (?:names?|named|gives?|gave|lists?|listed|mentions?|mentioned|says?|said|states?|stated|specif(?:y|ies|ied)|provides?|provided) (?:no|none|nothing)\b/i,
+  /\bthe request (?:does not|doesn't|did not|didn't) (?:name|say|mention|ask)\b/i,
+  /\bas requested\b/i,
+  /\bthe closing list\b/i,
+];
+
+/** The meta phrase a sentence contains, as written, or `undefined`. */
+export function findMetaPhrase(sentence: string): string | undefined {
+  const masked = maskInline(sentence);
+  for (const re of META_PHRASES) {
+    const m = re.exec(masked);
+    if (m !== null) return sentence.slice(m.index, m.index + m[0].length);
   }
   return undefined;
 }

@@ -71,39 +71,44 @@ steps:
   - { label: Release, desc: A passing draft goes to the human gate, or straight out under $200. }
 ```
 
-## 4 · What runs where?
+## 4 · What is the system made of?
 
 ```block
 id: deployment
 preset: infra
-title: The services around the agents
+title: The agent system, built from its parts
 groups:
-  - { col: 1, row: 1, cols: 1, rows: 2, label: Channels }
-  - { col: 2, row: 1, cols: 2, rows: 2, label: Agent runtime }
-  - { col: 4, row: 1, cols: 1, rows: 2, label: Knowledge }
-  - { col: 5, row: 1, cols: 1, rows: 2, label: Providers }
+  - { col: 1, row: 2, cols: 1, rows: 2, label: Channels }
+  - { col: 2, row: 1, cols: 3, rows: 3, label: Agent runtime }
+  - { col: 5, row: 2, cols: 1, rows: 2, label: Knowledge }
 nodes:
-  - { id: chat, col: 1, row: 1, kind: browser, name: Help widget }
-  - { id: mail, col: 1, row: 2, kind: email, name: Inbound mail }
-  - { id: orch, col: 2, row: 1, kind: agent, name: Orchestrator, tech: Node · queue worker }
-  - { id: gate, col: 2, row: 2, kind: user, name: Human desk, tech: approval UI }
-  - { id: tools, col: 3, row: 1, kind: service, name: Tool API, tech: invoices · orders }
-  - { id: trace, col: 3, row: 2, kind: store, name: Trace store, tech: every turn logged }
-  - { id: vec, col: 4, row: 1, kind: search, name: Vector index, tech: docs · 120k chunks }
-  - { id: hist, col: 4, row: 2, kind: db, name: Case history, tech: Postgres }
-  - { id: model, col: 5, row: 1, kind: llm, name: Model API, tech: Claude }
-  - { id: embed, col: 5, row: 2, kind: external, name: Embeddings }
+  - { id: chat, col: 1, row: 2, kind: browser, name: Help widget }
+  - { id: mail, col: 1, row: 3, kind: email, name: Inbound mail }
+  - { id: prompt, col: 2, row: 1, kind: prompt, name: System prompt, tech: support-v12 }
+  - { id: guard, col: 2, row: 2, kind: guard, name: Input guard, tech: PII · abuse }
+  - { id: gate, col: 2, row: 3, kind: human, name: Human desk, tech: refunds over $200 }
+  - { id: model, col: 3, row: 1, kind: llm, name: Model API, tech: claude-sonnet-4-6 }
+  - { id: orch, col: 3, row: 2, kind: agent, name: Orchestrator, tech: claude-haiku-4-5 }
+  - { id: judge, col: 3, row: 3, kind: eval, name: Grounding judge, tech: rubric v3 }
+  - { id: mem, col: 4, row: 1, kind: memory, name: Case memory, tech: last 5 tickets }
+  - { id: tools, col: 4, row: 2, kind: tool, name: Billing tools, tech: invoices · refunds }
+  - { id: vec, col: 5, row: 2, kind: vector, name: Doc chunks, tech: 120k · pgvector }
+  - { id: embed, col: 5, row: 3, kind: external, name: Embeddings API }
 edges:
-  - chat -> orch
-  - mail -> orch
-  - orch -> tools: calls
-  - orch -> vec: retrieves
+  - chat -> guard
+  - mail -> guard
+  - guard -> orch: screened
+  - prompt --> model: system
   - orch -> model: prompts
-  - orch -> hist: reads
-  - orch --> trace: logs
-  - orch --> gate: escalates
+  - orch -> mem: recalls
+  - orch -> tools: calls
+  - tools -> vec: searches
+  - orch -> judge: drafts
+  - judge --> gate: needs approval
   - vec --> embed: refreshes
 ```
+
+Each part is a `kind` from the AI kit, so the renderer draws its chip, glyph and colour. Model work is violet and tools are blue. What the system remembers is amber, the guard is green, and the person is rose.
 
 ## 5 · What does one agent's loop do?
 

@@ -38,6 +38,15 @@ describe('W_LENS_REPEAT', () => {
     expect(validateDocument(parseDocument(md, 't'), 't.md').filter((d) => d.code === 'W_LENS_REPEAT')).toEqual([]);
   });
 
+  it('counts each C4 level and the dynamic view as separate lenses', () => {
+    const c4 = (level: string, step = false) =>
+      '```c4\nlevel: ' + level + '\nnodes:\n  - { id: a, kind: system, name: A }\n  - { id: b, kind: external, name: B }\nedges:\n  - { from: a, to: b, label: calls' + (step ? ', step: 1' : '') + ' }\n```\n';
+    const zoom = c4('context') + c4('container') + c4('component') + c4('component', true);
+    expect(validateDocument(parseDocument(zoom, 't'), 't.md').filter((d) => d.code === 'W_LENS_REPEAT')).toEqual([]);
+    const same = c4('container').repeat(4);
+    expect(validateDocument(parseDocument(same, 't'), 't.md').filter((d) => d.code === 'W_LENS_REPEAT')).toHaveLength(1);
+  });
+
   it('leaves one sequence per route alone in an API reference', () => {
     const ep = '```endpoint\nmethod: GET\npath: /a\n```\n';
     const seq = '```sequence\nactors:\n  - { id: A, name: A }\n  - { id: B, name: B }\nmessages:\n  - A -> B: hi\n```\n';

@@ -24,6 +24,13 @@ describe('derive', () => {
     expect(d.rendered?.segments.length).toBe(d.doc.segments.length);
   });
 
+  it('runs the same lints as `chiltepin check` (core lintDocument)', () => {
+    const src =
+      '```meta\ntitle: T\n```\n\n```block\nnodes:\n  - { id: api, name: Orders API }\n  - { id: n9, name: New database }\n  - { id: db, name: orders-db }\nedges:\n  - api -> db\n  - api -> db\n```\n';
+    const codes = derive(src, 'lints').diagnostics.map((d) => d.code);
+    expect(codes).toEqual(expect.arrayContaining(['W_GENERIC_LABEL', 'W_ORPHAN_NODE', 'W_DUP_EDGE']));
+  });
+
   it('memoises on (source, slug) — same inputs return the same object', () => {
     const a = derive(SRC, 'guide');
     expect(derive(SRC, 'guide')).toBe(a);

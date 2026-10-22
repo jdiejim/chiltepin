@@ -1,8 +1,8 @@
 # Chiltepin blocks — Business, decisions & access
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Grid — compare, score, locate (`matrix`, `scorecard`, `harvey`,
 `swot`, `scenarios`); cards for decisions, strategy, and access (the rest).
@@ -37,15 +37,16 @@ Criteria as rows, options as columns, a weighted TOTAL row; the winner is
 derived. Answers: which option scores highest? `scorecard` when the decision
 was scored; `options` for qualitative verdicts; `harvey` for judgements.
 #### `spec` — a labelled spec sheet
-A fact sheet for one approach or component; a row with `steps` draws a pill flow.
-Answers: what are the facts of this one thing? `spec`, not `table`, for one subject.
+A fact sheet for one subject; a row with `steps` draws a pill flow. Answers: what
+must the reader enforce, or what are this one thing's facts? Not a default closer.
+`spec`, not `table`, for one subject; prose when the request gives no such rules.
 #### `envelope` — back-of-envelope capacity math
 Givens, one derivation row per step, then a highlighted bottom line. Every
 value is a string; write units and `≈` freely. Answers: do the numbers pencil
 out? `envelope` for the estimate that justifies a design; `stats` for KPIs.
 #### `swot` — strengths / weaknesses / opportunities / threats
-The 2×2 draws itself from four string lists; an empty quadrant still draws.
-Answers: where do we stand? `swot` for a position; `quadrant` to plot items.
+The 2×2 draws itself from four string lists. A fixed frame: use it only when the
+request gives all four sides. `swot` for a position; `quadrant` to plot items.
 #### `okr` — objectives + key results
 One card per objective, a progress bar per key result coloured by status.
 Answers: how far are we on each goal? `slo` for reliability; `statustable` for tasks.
@@ -62,8 +63,8 @@ footer. A short `ratings` row means "not assessed", not zero. Answers: which
 option fits best? `harvey` for judgements; `benchmark` for measured numbers.
 #### `scqa` — the executive summary, in Minto order
 Situation, complication, question as a ladder; the answer as the filled
-card with its support. Answers: what is the recommendation, and why?
-The order is fixed; keeping it is the block's job.
+card with its support. Answers: what is the recommendation, and why? A fixed
+frame: use it only for an executive ask with a real complication.
 #### `scenarios` — base, upside and downside
 Cases as columns, drivers as rows, the outcome in its own row; the base case
 is badged. A missing value renders `·`, not zero. Answers: how much of the

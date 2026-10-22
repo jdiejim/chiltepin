@@ -52,14 +52,47 @@ export type DiagnosticCode =
   // name its intent (and container-level lines their technology); an
   // unlabelled arrow leaves the reader to guess what crosses it. A warning.
   | 'W_EDGE_LABEL'
+  // A grid diagram's layout could not avoid a geometry problem: two nodes in
+  // one cell, an edge forced through a node, an edge label with no clear
+  // place on its edge, or many crossings (computed by `chiltepin-render`'s
+  // `geometryReport`, reported by the CLI). Always a warning; the hint says
+  // the fix in the block's data, never in pixels.
+  | 'W_GEOMETRY'
   // The same structural block type used three or more times in one document
   // (tables and code excepted). One lens repeated is usually the writer
   // reaching for the familiar shape; the warning names alternatives.
   | 'W_LENS_REPEAT'
+  // A diagram node, actor, or step named with a placeholder (`Service A`,
+  // `Database`, `Step 1`, `TODO`) instead of the real component's name (see
+  // `genericLabels.ts`). A warning — a template echo, never blocking.
+  | 'W_GENERIC_LABEL'
   // On-disk convention (checked by the CLI — it is path-based, not
   // content-based): kebab-case filenames, at most `docs/<area>/<doc>.md`
   // under the docs root. Always a warning; no flag escalates it.
   | 'W_DOC_CONVENTION'
+  // A Markdown link in prose (`[text](#anchor)`, `[text](doc#id)`,
+  // `[text](./other.md#anchor)`) whose target doc, block id, or heading id
+  // does not exist (see `links.ts` and `resolve.ts`). An error, like
+  // E_DANGLING_REF: the built site would 404.
+  | 'E_DANGLING_LINK'
+  // A diagram is wider than the page can show: past the 1600-unit stage it
+  // scrolls sideways, or it shrinks below a readable share of the column
+  // (computed by the CLI from the rendered SVG viewBox). Always a warning;
+  // the hint names the data fix for the block type.
+  | 'W_FIT'
+  // Graph lints (see `graphLints.ts`). Pure, high-precision warnings about
+  // a diagram's data: a node no edge touches, a group panel with no node in
+  // its cells, an edge written twice, a decision with an unlabelled branch,
+  // an error edge into the success end, a sequence actor in no message.
+  | 'W_ORPHAN_NODE'
+  | 'W_EMPTY_GROUP'
+  | 'W_DUP_EDGE'
+  | 'W_DECISION_LABEL'
+  | 'W_ERROR_INTO_SUCCESS'
+  | 'W_IDLE_ACTOR'
+  // Text copied unchanged from a `chiltepin new` doc template (see
+  // `templateEcho.ts`). A warning: the example content was never replaced.
+  | 'W_TEMPLATE_ECHO'
   // Prose-lint codes (see `prose/lint.ts`). Warnings by default; the CLI can
   // escalate them under a strict flag.
   | 'W_PROSE_LONG_SENTENCE'

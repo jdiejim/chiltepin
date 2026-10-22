@@ -44,8 +44,7 @@ describe('mindmap', () => {
 
   it('puts alternate branches on opposite sides of the centre', () => {
     const html = renderMindmap(ONBOARDING);
-    // The series ramp carries its token fallback (`var(--series-1, #…)`), as charts do; nothing else may.
-    expect(html.replace(/var\(--series-\d, #[0-9a-f]{6}\)/g, '')).not.toMatch(NO_HEX);
+    expect(html).not.toMatch(NO_HEX);
     const cx = centerX(html);
     // Branch 1 right, branch 2 left, branch 3 right — and their children follow.
     expect(xOf(html, 'nodes.0')).toBeGreaterThan(cx);
@@ -77,10 +76,13 @@ describe('mindmap', () => {
     expect(root.querySelectorAll('.diagram-stage line')).toHaveLength(9);
   });
 
-  it('colour-codes flagged branches with the series ramp and keeps unflagged ones muted', () => {
+  it('colour-codes flagged branches with the category hues and keeps unflagged ones muted', () => {
     const html = renderMindmap(ONBOARDING);
-    expect(html).toContain('var(--series-1');
-    expect(html).toContain('var(--series-3');
+    // Each branch takes the hue it names: blue, teal, amber.
+    expect(html).toContain('stroke="var(--hue-blue)"');
+    expect(html).toContain('stroke="var(--hue-teal)"');
+    expect(html).toContain('stroke="var(--hue-amber)"');
+    expect(html).not.toContain('var(--series-');
     expect(html).not.toContain('var(--accent)');
     const legend = parse(html).querySelectorAll('.diagram-legend .lg-label').map((l) => l.text);
     expect(legend).toEqual(['Account', 'Data import', 'Learning']);
@@ -91,7 +93,7 @@ describe('mindmap', () => {
     expect(one).toContain('stroke="var(--muted)"');
   });
 
-  it('wraps a long label to two lines and grows the viewBox to fit', () => {
+  it('wraps a long label onto more lines and grows the viewBox to fit', () => {
     const short = renderMindmap({ center: 'c', nodes: [{ id: 'a', label: 'Short' }] });
     const long = renderMindmap({
       center: 'c',
@@ -99,6 +101,6 @@ describe('mindmap', () => {
     });
     const w = (h: string): number => Number(parse(h).querySelector('svg')?.getAttribute('viewBox')?.split(' ')[2]);
     expect(w(long)).toBeGreaterThan(w(short));
-    expect(parse(long).querySelectorAll('[data-bp="nodes.0"] text')).toHaveLength(2);
+    expect(parse(long).querySelectorAll('[data-bp="nodes.0"] text')).toHaveLength(4);
   });
 });

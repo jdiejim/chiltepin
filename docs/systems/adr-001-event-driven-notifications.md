@@ -98,25 +98,11 @@ nodes:
     row: 1
     kind: consumer
     name: Fan-out worker
-  - id: node8
-    name: New node
-    col: 1
-    row: 4
   - id: dlq
     col: 4
     row: 1
     kind: queue
     name: retry / DLQ
-  - id: n9
-    name: New database
-    kind: db
-    col: 4
-    row: 2
-  - id: n10
-    name: New database
-    kind: db
-    col: 4
-    row: 4
 edges:
   - { from: orders, to: topic }
   - { from: billing, to: topic }
@@ -124,33 +110,11 @@ edges:
   - { from: topic, to: digest }
   - { from: topic, to: worker }
   - { from: worker, to: dlq, label: nack → retry, kind: dashed }
-  - from: digest
-    to: n9
-  - from: digest
-    to: n9
-  - from: digest
-    to: n10
 groups:
-  - col: 2
-    row: 1
-    label: New group
-  - col: 4
-    row: 1
-    label: New group
-  - col: 2
-    row: 2
-    label: New group
-  - col: 2
-    row: 2
-    label: Newfsf group
-  - col: 3
-    row: 2
-    label: New group
   - col: 1
     row: 1
-    label: New group
-    cols: 2
-    rows: 4
+    rows: 3
+    label: Producers
 ```
 
 ## Data model
@@ -258,10 +222,6 @@ nodes:
     row: 2
     kind: external
     name: API Gateway
-  - id: ""
-    name: ""
-  - id: ""
-    name: ""
 edges:
   - { from: bell, to: store, kind: reads }
   - { from: feed, to: store, kind: reads }

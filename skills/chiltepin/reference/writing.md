@@ -1,80 +1,139 @@
-# Writing blocks — step 6 of the procedure
+# Writing a doc — the opening, the headings, the page, the YAML
 
-Read this file when a YAML question is not answered by `chiltepin block <type>`.
-It holds the block grammar, the full terse-item table, the YAML traps, the
-reference scheme, and the naming rules. The field contract and an example
-for every block come from `npx -y chiltepin@latest block <type>`.
+Part of the **chiltepin** skill (the hub is `SKILL.md`, one folder up). Read
+this in steps 2–4 of the loop. The field contract, the terse forms, and an
+example for every block come from `chiltepin block <type>`. Every sample
+here and in the CLI shows grammar only. Take the nouns, the node count, and
+the shape from the fact inventory, never from a sample.
+
+## The opening
+
+Before the first block, write two sentences the reader could forward:
+
+1. The answer, in the reader's terms.
+2. The number or limit that forces it.
+
+If the answer is a proposal, the first sentence says so, and `meta.status`
+is `proposal`. Context and background come after the answer, in a clause or
+a later section — never as the opening paragraph. The `meta` subtitle is
+the answer in one line, never the question.
+
+Before — the subtitle asks, the heading names a topic, the opening explains
+the mechanism before the reader knows the result:
+
+```
+subtitle: How a card payment gets approve, review, or decline in under 80 ms
+
+## The 80 ms path from the payment gateway to a decision
+
+The rules engine and the XGBoost model start together when the features
+arrive, so the slower of the two sets the path, not their sum.
+```
+
+After — the answer, then the number; the heading is the claim:
+
+```
+subtitle: Rules and the model score each payment in parallel; a late score falls back to rules.
+
+We propose that the scoring service returns approve, review, or decline
+within the payment gateway's 80 ms p99 budget. The proposed hop budgets add
+up to 65 ms, and the model's 40 ms deadline sets the critical path.
+
+## The model's 40 ms deadline sets the critical path
+```
+
+## Headings
+
+- **Explanation and decision docs use claim headings**: a sentence that the
+  section proves ("The 201 returns before any subscriber acts").
+- **How-to and reference docs use task labels** ("Replay a gap", "Errors").
+- At most half the headings are questions. A question heading must be one
+  the reader asks, and the section must answer it in its first sentence.
+- Read only the headings in order. They must make the argument without the
+  body. If they could sit on another doc, they are a template.
+- A heading never names the block type ("Sequence", "Flow").
+- Open each section with a sentence that links it to the previous one.
+
+## The page contract
+
+| Element | Renders as | Write |
+|---|---|---|
+| `##` heading | the only document heading | the claim the section proves |
+| block `title` | the figure caption, "Fig. N · title" | what the figure shows ("Decision policy in the scoring service") |
+| block `lede` | one line above the figure | the takeaway, when the heading does not already say it |
+| block `description` | small text under the caption | scope, source, or how to read an unusual encoding; 2 sentences at most |
+| prose between blocks | body text | why, the tradeoff, and the consequence — never a restated figure |
+
+Give every diagram a `title`. Do not repeat the heading in the `title` or
+the `lede`. Do not add a `prose` block and raw `##` headings for the same idea.
+
+## `meta` — the cover
+
+| Field | Write |
+|---|---|
+| `title` | what the doc is, in the user's domain language; the user's name for it when given |
+| `subtitle` | the answer in one line |
+| `tag` | the kind of doc, from one list: `Explanation`, `How-to`, `Reference`, `Tutorial`, `Design doc`, `ADR`, `Runbook`, `Postmortem`, `Spec` |
+| `status` | `draft`, `proposal`, `review`, `accepted`, `superseded`, `deprecated`, or `example` |
+| `owners` · `reviewers` | the people or teams the request names; never invented names |
+| `updated` · `version` | the date of the last real change; the version the doc describes |
+
+An ADR keeps its status in `status` and its decision date in `updated`. A
+superseding ADR links the old one in its first sentence; the old one gets
+`status: superseded`. Match the user's register: "quick notes on auth" is
+not an "Authn & Authz Architecture Specification".
+
+## Links and references
+
+- `[text](#id)` links back to an earlier block (its `id:`) or heading in
+  the same doc. Use it when a later section relies on an earlier figure:
+  "the retry cap in [the repair loop](#repair-loop)".
+- `[text](doc#id)` links into another doc; `doc` is the path under the docs
+  root without `.md` (`payments/api#seq-charge`). `[text](./other.md)` also works.
+- A heading's id is its slug: "Replay a gap" → `#replay-a-gap`.
+- `ref` fields (`userstory.links[]`, `stories.items[].links[]`) take `doc#id`
+  or `#id`. Ids are unique across the whole repo.
+- A missing target fails the check: `E_DANGLING_LINK` for a prose link,
+  `E_DANGLING_REF` for a `ref`.
+
+## Numbers
+
+Give each number a unit, a window or percentile, and a baseline or target:
+"p95 over 7 d: 2.4 s → 600 ms", not "fast" or "2.4 s". Set the block's
+`unit` field when it has one (`chart`, `heatmap`, `sankey`, `treemap`,
+`slopegraph`, `spans`, `percentiles`, `timing`, `context`, `tree`, and each
+`perfbudget` metric). Cite the source in the block's `note` or the sentence:
+"(Datadog, 14–21 Oct)". A `stats` item sets `better: up` or `better: down`
+when a fall is good news. If the headline is one number, lead with
+`bignumber`.
 
 ## How a block looks
 
 ````
-## Request flow
-
 ```sequence
 id: seq-place-order
-endpoint: { method: POST, path: /orders }
+title: Placing an order with payment capture
 actors:
-  - { id: Client, name: Client }
-  - { id: API, name: Orders API }
+  - { id: web, name: checkout-web }
+  - { id: api, name: orders-api }
 messages:
-  - Client -> API: POST /orders
-  - API --> Client: 201 Created
+  - web -> api: POST /orders
+  - api --> web: 201 Created
 ```
 ````
 
-Rules:
-
-- The info-string is exactly one of the block types listed by `chiltepin block`
-  (`blocks/INDEX.md` is the same list). Never invent a type. The 12 old
-  merged names remain valid as permanent aliases.
-- The body is **YAML**. JSON is valid YAML and also parses — write JSON when a value is full of commas or colons. A `mermaid`
-  fence is also accepted for five diagram grammars — see `mermaid.md`.
-- Use only the fields documented for that block. The schemas are strict: an
-  unknown field is an error. Keep prose outside blocks.
-- A block MAY carry a top-level `id:` (a slug) so other blocks can reference
-  it.
-- Most diagram blocks accept optional `title`, `description`, and `lede`.
-  A `##` heading directly above a block IS its title — omit the block `title`
-  unless it must say something the heading does not.
-- A `description` is at most 2 sentences. Longer narrative goes in prose.
+- The info-string is exactly one block type from `chiltepin block`. Never
+  invent a type.
+- The body is **YAML**. JSON is valid YAML and also parses — write JSON when a
+  value is full of commas or colons. A `mermaid` fence is also accepted for
+  five diagram grammars, with fewer fields (`mermaid.md`).
+- Use only the fields the contract prints. The schemas are strict: an
+  unknown field is an error.
+- Write the terse one-line form the contract prints by default
+  (`a -> b: label`, `Term — definition`, `label · value · delta`). It
+  expands to the object form at parse time. Switch to the object form only
+  for a field the grammar cannot say.
 - Never paste raw HTML, `<svg>`, or `<style>` into a doc.
-
-## Terse arrows & items — the default for chatty lists
-
-Most list fields accept a **terse one-line string** per item. Write this form
-by default; it expands to the object form at parse time, so validation and
-rendering are identical.
-
-**Arrows & diagrams**
-
-| Field | Terse item | Grammar |
-|---|---|---|
-| `sequence.messages` | `Client -> API: POST /orders` | `from -> to: label` — `->` sync · `-->` response · `-x->` error · `-> +to` opens an activation bar on `to` · `--> -to` closes the sender's bar |
-| `sequence.messages` frames | `alt: token valid` · `else: expired` · `end` | `alt` `opt` `loop` `par` `break` `critical` open a frame (`: guard` optional) · `else: guard` starts the next branch · a bare `end` closes the frame |
-| `flow`/`graph`/`block` `edges` · `c4.edges` · `cluster.links` | `build -> deploy: on green` | `->` solid · `-->` dashed · `-x->` error |
-| `dfd.edges` · `swimlane.links` | `a -> b: writes` | `from -> to: label` |
-| `state.transitions` | `idle -> active: submit` | the label is the **event** |
-| `flow`/`graph`/`block`/`dfd`/`state` **nodes** | `rx: Receive` — or just `Receive` | `id: Label`; a bare name is both id and label |
-| `erd` entity `columns` | `id uuid pk` · `org_id: uuid fk` | `name [type…] [pk] [fk]` |
-| `erd.relations` | `users \|\|--o{ orders: places` | crow's-foot — `\|\|--\|\|` 1:1 · `\|\|--o{` 1:N · `}o--o{` N:M · plain `->` = no cardinality |
-
-**Text & cards** (split on ` — ` em dash · `·` middle dot)
-
-| Field | Terse item | Grammar |
-|---|---|---|
-| `glossary.terms` | `SLO — the target` | `term — def` |
-| `faq.items` | `Why fast? — The cache is warm.` | `q — a` |
-| `takeaways` / `list` / `steps` items | `Ship small — five beats one.` | `lead — detail?` |
-| `kanban` cards | `Core parser` · `Validation · priority` | `title · tag?` |
-| `stats.stats` | `p95 · 120ms · -30%` | `label · value · delta?` — trend inferred from the sign |
-| `team.members` | `Ana · Backend · payments` | `name · role? · focus?` |
-| `agenda.items` | `09:00 · 20m · Standup — round robin` | `[time ·] [duration ·] title [— desc]` |
-| `okr` key results | `[on-track] Signups · 60%` | optional `[status]`, then `kr · progress` |
-| `timeline.items` | `[done] 2026-07 · Ship beta · Behind a flag` | optional `[status]`, then `date · label · desc` |
-
-The label is everything after the **first** `:` (arrows) or the first ` — `
-(text pairs). Mix terse strings and objects freely in one list; switch to the
-object form when an item needs fields the grammar cannot say.
 
 ## YAML pitfalls — quote when in doubt
 
@@ -97,36 +156,13 @@ anything longer, use block style — easier diffs, fewer comma traps. When a
 `desc` / `note` / `summary` / `description` contains prose, **always quote
 it** — those fields are the top source of validation errors.
 
-## Cross-references (`doc#id`)
-
-Blocks become a connected model through references:
-
-- Give a block a unique `id:` (unique across the **whole repo**).
-- Reference it as `doc#id`, where `doc` is the target file's path under the
-  docs root without `.md` (e.g. `orders-api`, `architecture/overview`).
-- A bare `#id` means the current document. **Always prefer `#id` inside the
-  same doc** — it survives renames. Do not repeat the current doc's slug.
-- A reference to an id that does not exist is a **dangling reference** and
-  fails validation. Only add a `ref` to an id that exists (or that you create
-  in the same change).
-
-The only reference-bearing field in v1 is `userstory.links[].ref`.
-
-## Names, titles, voice
+## Names
 
 - **Use the user's nouns, verbatim.** They say "tenants" — do not write
   "customers". Carry their exact terms into labels, headings, node names.
 - **One consistent world.** The service named `orders-api` in the `c4` keeps
   that exact name in the `sequence`, the `erd`, and the prose.
-- **Headings state what the reader sees** ("Request flow", "Rollout plan"),
-  never the block type ("Sequence").
-- **`meta` cover**: `title` = what the document is, in the user's domain
-  language; `subtitle` = the question it answers; `tag` = a short pill
-  (`RFC`, `Runbook`). If the user named the doc, use that name as-is.
-- **Match their register.** Do not inflate "quick notes on auth" into "Authn
-  & Authz Architecture Specification". "DRAFT" left in a finished doc is a
-  bug.
+- **Never invent a company or product name.** Write "our platform" or the
+  team's own noun. Never write "the request": the reader never saw it.
 - `frontend` is a top-down tree; `felogic` (or `variant: be`) is a module
   graph with edges. Do not swap them.
-- Do not add a `prose` block AND raw `##` headings for the same idea. Pick
-  one.

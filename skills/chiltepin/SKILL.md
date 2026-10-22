@@ -13,168 +13,177 @@ description: >-
 A doc is plain Markdown. Anything structured — a diagram, a table, a plan — is
 a fenced block whose info-string is the block type and whose body is YAML.
 The `.md` file is the only source of truth. Never paste HTML or SVG. Never
-place pixels: the renderer owns layout, you own content.
+place pixels: the renderer owns layout and colour, you own the facts.
 
-````
-## Request flow
+## What a great doc looks like
 
-```sequence
-actors:
-  - { id: Client, name: Client }
-  - { id: API, name: Orders API }
-messages:
-  - Client -> API: POST /orders
-  - API --> Client: 201 Created
-```
-````
+A great doc opens with two sentences the reader could forward: the answer,
+then the number or limit that forces it. If the answer is a proposal, the
+first sentence says so. The headings, read alone, make the argument. The
+first diagram shows the whole mechanism on one screen, loops intact. Later
+blocks zoom in on what breaks at the named limit, the number that matters,
+and the option chosen over the one rejected, with its cost. Each invented
+value is marked once. The doc ends on what happens next: the open decision
+and its owner, or the follow-up work.
 
-## Fast path
+## Tools
 
-Use the project's installed CLI (`pnpm exec chiltepin` or `npx --no-install chiltepin`)
-to match its dependency version. Otherwise, `npx -y chiltepin@latest …` downloads and
-runs the published CLI. In the Chiltepin source repo, use the built
-`node packages/cli/dist/bin.js`. The commands below show the fallback form.
+Use the project's CLI (`pnpm exec chiltepin`), else `npx -y chiltepin@latest`;
+in the Chiltepin repo, `node packages/cli/dist/bin.js`. Detailed references
+live beside this file — read them on demand (the table at the end).
 
-Detailed references live beside this file — read them on demand; the table
-at the end explains which reference each task needs.
+| Command | What it does |
+|---|---|
+| `chiltepin block` | Prints the catalog: it lists all 107 block types by family, and the old names that still work. |
+| `chiltepin block <type>` | Prints one block's fields, field notes, terse forms, and a grammar example. |
+| `chiltepin check <file> --json` | Validates. Each diagnostic has a stable code, the value, and a hint. |
+| `chiltepin review <file>` | Runs the check, renders every block (light, dark, 400 px, print), and prints one line per problem with its fix in data terms. Writes `contact-sheet.png`. |
+| `chiltepin html <file>` | Writes `<file>.html` beside the source. `-p` opens a preview. |
+| `chiltepin slides <file>` · `pdf <file>` | Renders the doc as a deck, or as a PDF. |
+| `chiltepin sync openapi\|csv\|sql\|dbml\|prisma <file>` | Imports a real source, so you never retype it. |
+| `chiltepin audit [path]` | Reads a codebase and lists the docs it needs, with evidence. |
+| `chiltepin studio` · `build` | Opens the visual editor, or builds the static site. Hand these to the user. |
+| `chiltepin new <type>` | Prints an empty block scaffold. Doc templates (`new adr`) are for a person who starts blank; never fill one from a request. |
 
-1. **Pick the blocks from the reader's question**, not from the words in the
-   request. Use the table below. For a full doc, two to five structural blocks
-   often suffice. A single diagram request needs only that diagram. Use prose
-   when a small list communicates the same information more clearly.
-   Unsure which block exists: `npx -y chiltepin@latest block` lists all 107 block types.
-2. **Look up each block you will write**: `npx -y chiltepin@latest block <type>`.
-   It prints the fields, enums, terse one-line forms, and a validating
-   example. Read a family selection sheet only when the choice remains unclear.
-3. **Write the doc.** For a full doc, put `meta` first (title, subtitle, tag). A `##` heading
-   above a block is its title. Prose carries why and consequence, never a
-   description of the block below it. Rules in the two sections after the
-   table.
-4. **Check**: `npx -y chiltepin@latest check <file> --json`. Every diagnostic carries
-   a stable code and the failing value; `reference/check.md` maps each code
-   to its fix. Fix errors and rerun while you make progress. Stop and report
-   the blocker if a diagnostic repeats without a new fix or needs missing facts.
-   Warnings do not fail the check by default; review them and report relevant ones.
-   A non-zero exit is never "done". If the CLI is unavailable, report validation
-   as unverified. Never invent a successful check.
-5. **Render**: after a clean check, `npx -y chiltepin@latest html <file>` writes
-   `<file>.html` next to the source, so the reader gets the page as well as
-   the Markdown. Add `-p` to open it. For a deck, `slides <file>` instead.
+## The loop
 
-Handoff: the `.md` and `.html` paths, the actual check result, and any
-unresolved diagnostics. Then one line on what to do next: open the `.html`
-in a browser, or run `npx -y chiltepin@latest studio` to edit the document visually.
-Explain block selection only when the user asks or a tradeoff needs explanation.
+Run all seven steps for a full doc. For one diagram, run steps 1 and 3–7.
 
-Editing an existing doc: read it whole first. Change the one block, and
-carry the fact into related blocks within the requested scope. Preserve unrelated
-content. Rewrite the whole document only when the user requests a rewrite.
+1. **GROUND — build a fact inventory** from the request and every file the
+   user points at (import with `sync`). Start with the reader: who, when,
+   and what they decide or do next. Then list components (nodes),
+   interactions (edges, as verbs), numbers and their sources, limits,
+   failure cases, owners, and boundaries. For each limit (80 ms, 3 repairs),
+   find what happens when it is hit and who chose it; if nobody says, it is
+   an open question with an owner. Ask back when a critical fact is
+   missing (`reference/intake.md`).
+2. **PLAN — the headings make the argument.** One block per reader question
+   (table below; `reference/recipes.md`). Most single-topic docs need 2–5
+   blocks; a design or review doc can need more. Open with two sentences:
+   the answer, then the number or limit that forces it. Headings state
+   claims, or tasks in a how-to (`reference/writing.md`). The last section
+   says what happens next: the open decision and its owner, open questions
+   (`faq`), or follow-up work (`statustable`). Never end on caveats.
+3. **CONTRACT — run `chiltepin block <type>` for each block.** Use only the
+   fields it prints. Its example shows grammar only: never reuse its nouns,
+   node count, layout, or shape.
+4. **COMPOSE — build from the kit (`reference/kit.md`).** Nodes come from the
+   inventory, each with a `kind`. Groups mark real boundaries only; edge
+   labels are verbs. Omit `col`/`row` unless groups need them. Mark the one
+   thing the heading claims, once (the Focus table).
+5. **CHECK — run `chiltepin check <file> --json`.** Fix every error, and each
+   warning in the data (`reference/check.md`). Rerun while each run makes
+   progress. Never report a check you did not run; without the CLI, say so.
+6. **REVIEW — run `chiltepin review <file>`.** Fix each line it prints in
+   the data, then run it again. Then read the doc as its reader:
+   - The opening gives the answer and the number that forces it.
+   - The headings, read alone, make the argument.
+   - The first diagram shows the whole mechanism, loops intact.
+   - Each limit says what happens at the limit, and who chose it.
+   - Each number has a unit, a window, a baseline, and a source.
+   - Each invented value is marked once; no block repeats another.
+   - The last section says what to do or decide next, and who owns it.
+   - Would this outline fit any other request? If yes, rebuild it.
+7. **HANDOFF.** Give the `.md` and `.html` paths, the actual `check` and
+   `review` results, open diagnostics, and open questions with owners.
+   Then one next step: open the `.html`, or edit in `chiltepin studio`.
+
+**Invented facts.** Mark an invented value once, where the reader acts on
+it: in the block's `note`, or one inline "(assumed)". When most specifics
+are invented, say so once in the opening and set `meta.status: example`.
+When the central answer is invented, the first sentence says so and
+`meta.status` is `proposal`. Never invent a company or product name:
+write "our platform". Never write "the request": the reader never saw it.
+
+Editing a doc: read it whole, change the one block, and carry the fact into
+related blocks. Rewrite the whole doc only on request.
 
 ## Pick the block by the reader's question
 
-| Reader question | Blocks | Choose by |
+Find the question, read the family file, and avoid the trap.
+
+| Reader question | Read | Pick, and the trap |
 |---|---|---|
-| What calls what? | `sequence` · `graph` · `c4` | ordered messages → sequence; topology at rest → graph or c4 |
-| What path does a request take through the infrastructure? | `block` · `c4` · `cluster` | tiers and hops → block; system context for a stakeholder → c4; namespaces and replicas → cluster |
-| What happens when this fails? | `flow` · `saga` · `state` · `sequence` | branching decisions → flow; multi-service undo → saga; one object's lifecycle → state |
-| Where did the time go? | `spans` · `sequence` | measured durations → spans; call order only → sequence |
-| What does the event carry, who emits and consumes it? | `eventcontract` · `table` | one event → eventcontract; a catalog → table |
-| Who publishes, who subscribes, how does work fan out? | `block` (`preset: event`) · `dfd` · `sequence` | topology of producers, topics, queues, consumers → block; the hop order with the failure branch → sequence; `reference/patterns.md` names the stack per pattern |
-| How does this ship, and what stops it? | `rollout` · `steps` · `timeline` | staged traffic with gates → rollout; manual procedure → steps; dated milestones → timeline |
-| What lives inside what? | `c4` · `cluster` · `block` · `layers` · `archmap` · `tree` · `composition` · `treemap` | runtime boundaries → c4/cluster/block; conceptual tiers → layers; capability landscape → archmap; part-of → tree/composition; area budget → treemap |
-| What changes over time? | `timeline` · `gantt` · `changelog` · `chart` · `slopegraph` · `state` | events → timeline; scheduled work → gantt; released work → changelog; a measured quantity → chart; two snapshots → slopegraph |
-| How do these options compare? | `options` · `proscons` · `matrix` · `scorecard` · `benchmark` · `quadrant` · `harvey` | criteria × candidates → options; one option → proscons; numbers → benchmark; two axes → quadrant |
-| Where does data go? | `dfd` · `sankey` · `erd` | processes and stores → dfd; volumes → sankey; shape at rest → erd |
-| Who does what, when? | `swimlane` · `journey` · `agenda` · `team` · `kanban` | ownership across steps → swimlane; experience over stages → journey; work in flight → kanban |
-| What are the exact steps? | `steps` · `flow` | linear → steps; branches or retries → flow |
-| What do we build, in what order? | `storymap` · `timeline` · `gantt` | scope per journey step by release → storymap |
-| How big, how fast, how much? | `bignumber` · `stats` · `chart` · `envelope` · `benchmark` | one headline → bignumber; a set → stats; napkin math → envelope |
-| What is this made of? | `anatomy` · `composition` · `erd` · `layers` | labeled parts of a string → anatomy; proportions → composition |
-| What causes this? | `fishbone` · `matrix` | one effect, branching causes → fishbone |
-| Why did we decide this? | `options` · `proscons` · `scqa` · `takeaways` · `callout` | the ADR shape → `reference/recipes.md`; the decision alone → callout |
-| Is it a table, or a table with a job? | `table` · `statustable` · `matrix` · `heatmap` · `benchmark` · `scorecard` · `glossary` · `changelog` · `inventory` · `audit` · `checklist` · `journey` | `table` only when every cell is a plain fact. A status per row → statustable; two axes with a mark or permission → matrix; a value grid read by intensity → heatmap; measured numbers compared → benchmark; scores you gave → scorecard; term — definition → glossary; releases → changelog; components with a maturity → inventory; findings with evidence → audit; a standard applied → checklist; touchpoints per stage → journey; API params → endpoint |
-| What does the API accept and return? | `endpoint` · `code` · `packet` · `table` | HTTP surface → endpoint; wire format → packet; error codes → table |
-| How does the AI workflow run end to end? | `flow` · `swimlane` · `block` · `cycle` · `sequence` | agents, models, tools, humans and memory as `flow` nodes with `kind: agent / llm / tool / human / memory` — a RAG pipeline, a router, a multi-agent hand-off, a generate-check-repair loop; several owners per step → swimlane; the deployment around it → block; an improve-and-re-evaluate loop → cycle; one turn's timing → sequence. Draw the workflow the request describes; `agentloop` is only the fixed single-agent frame |
-| How does one agent's loop behave? | `agentloop` · `trace` · `prompt` · `context` | the loop → agentloop; one real run → trace; the contract → prompt; window contents → context |
-| What did the review find, and are we ready? | `audit` · `checklist` · `risk` | defects found with evidence → audit; a standard applied once → checklist; what might go wrong → risk |
-| Are we within budget, and how slow is the tail? | `perfbudget` · `percentiles` · `slo` · `benchmark` | targets with a pass line → perfbudget; p50…p99 per endpoint → percentiles; targets over time → slo |
-| Where can this be attacked? | `threatmodel` · `dfd` · `audit` | STRIDE on a data flow with trust boundaries → threatmodel; the flow alone → dfd |
-| Who uses the system for what, and which module may depend on which? | `usecase` · `pkg` · `uml` · `timing` | actors and cases → usecase; module dependencies → pkg; classes → uml; states over time with durations → timing; `reference/patterns-design.md` maps the GoF and distributed patterns to blocks |
-| What is the model's shape, and what may it be used for? | `neuralnet` · `modelcard` · `chart` | layers → neuralnet; the card → modelcard; loss curves → chart line |
-| What ships when, by theme, and where are we in the process? | `roadmap` · `chevrons` · `gantt` · `mindmap` | quarters × themes → roadmap; phases with the current one → chevrons; dated tasks → gantt; unordered ideas around a topic → mindmap |
-| What must always hold? | `spec` · `slo` · `glossary` · `callout` | invariants → spec; service targets → slo; terms → glossary |
-| What does the user see? | `wireframe` · `frontend` · `felogic` | screens → wireframe; component tree → frontend; module graph with edges → felogic |
-| How does the algorithm move through the data? | `array` · `linkedlist` · `bintree` · `hashmap` · `graph` · `code` | pointers, a window, or binary search over cells → array; pointer rewiring → linkedlist; a tree shape → bintree (never `tree`, that is a file hierarchy); hashing → hashmap; visit order → graph with node `state`; the reference implementation → code. A `flow` or `table` is the keyword trap here. |
+| What calls what, in what order? Where did the time go? | `flows.md` | messages in order → `sequence`; measured durations → `spans` |
+| What runs where, inside which boundary? | `architecture.md` | topology → `block` (`kit.md`); stakeholder context → `c4`; namespaces → `cluster`. Not `graph` |
+| What happens when it fails? Which states? | `flows.md` | branches, retries → `flow`; multi-service undo → `saga`; one object's lifecycle → `state` |
+| What are the exact steps? | `flows.md` | linear → `steps`; branches → `flow`; owners per step → `swimlane` |
+| How does the AI system run? | `kit.md` | a `flow` or `block` from the AI kit. `agentloop` is the trap |
+| What does the API or event carry? | `api.md` | HTTP → `endpoint`; one event → `eventcontract`; bits → `packet` |
+| What shape is the data, and where does it go? | `data-model.md` | at rest → `erd`; processes and stores → `dfd`; volumes → `sankey` |
+| How big, how fast, how much? | `tables-data.md` | one headline → `bignumber`; KPIs → `stats`; napkin math → `envelope`; the tail → `percentiles` |
+| What changes over time? | `charts-overviews.md`, `planning.md` | a measured quantity → `chart`; ordered events or phases, past or planned → `timeline`; releases → `changelog` |
+| What is it made of? | `charts-overviews.md` | part-of → `tree`; proportions → `treemap` (more than 6 parts) or a donut `chart`; an AND of access checks → `composition` |
+| Which option, and why? | `business.md` | verdicts → `options`; one option → `proscons`; scores → `scorecard`; measurements → `benchmark` |
+| What is the plan, status, or risk? | `planning.md` | status per row → `statustable`; risks → `risk`; themes × quarters → `roadmap` |
+| What did the review find? | `quality.md` | findings → `audit`; a standard → `checklist`; STRIDE → `threatmodel` |
+| Who does what, and how does it feel? | `flows.md`, `charts-overviews.md` | owners per step → `swimlane`; a staged experience with feelings → `journey` |
+| Where do we stand, and what do we build? | `business.md` | `swot`, `wardley`, `scenarios`, `okr`, `persona`, `venn`. A frame with a missing side is the trap |
+| How do branches fork and release? | `flows.md` | `gitgraph`, not `timeline` |
+| Which tokens, and how do we use them? | `design-system.md` | `palette`, `typescale`, `dodont`, `inventory`, `wireframe` |
+| How does the algorithm move through the data? | `algorithms.md` | `array`, `linkedlist`, `bintree`, `hashmap`, or `graph` with `state`. Not `flow` |
+| Is it a table, or a table with a job? | `tables-data.md` | `table` only when every cell is a plain fact |
 
 The type name is a hint, not a cage: a `quadrant` is any two-axis 2×2, a
-`journey` any staged progression, a `cvt` any before → after. Relabel every
-axis, column, and unit in the user's own nouns.
-
-Twelve old names still work as aliases (`infra` `event` `ddd` `network` →
-`block`, `belogic` → `felogic`, `dag` → `flow`, `waterfall` `funnel` →
-`chart`, `diff` `terminal` → `code`, `mece` → `tree`, `tracker` →
-`statustable`). Write the canonical name in new blocks; never rewrite an
-existing fence only to silence the `W_ALIAS_TYPE` warning.
+`cvt` any before → after in words (numbers per row: a dumbbell `chart`).
+Relabel every axis and unit in the user's nouns.
+Fixed frames (`agentloop`, `cycle`, `swot`, `scqa`, `pyramid`, `chevrons`)
+draw one set picture: choose one only when the facts already have that
+shape. Old block names stay valid (`chiltepin block` lists them); write
+the canonical name.
 
 ## Writing rules
 
-- Use only the fields `chiltepin block <type>` prints. Schemas are strict: an
-  unknown field is an error.
 - **Quote any YAML value that contains `,` `:` `#` `{` `}` or starts with a
   special character.** Inside `{ a: b, c: d }` an unquoted comma splits a
-  phrase into keys. Numbers that must be strings (`version: "1.0"`, `delta:
-  "0"`) get quotes. Prose fields (`desc`, `note`, `summary`, `description`)
-  are always quoted. When unsure, write the body as JSON — it is valid YAML.
-- Prefer the terse one-line item forms the contract prints (`a -> b: label`,
-  `Term — definition`). Switch to the object form only for a field the
-  grammar cannot say.
-- Give a block an `id:` when another block references it; reference it as
-  `doc#id`, or `#id` inside the same doc. A ref to a missing id fails the
-  check.
-- Use the user's nouns verbatim, and the same name for the same thing in
-  every block. Headings say what the reader sees, never the block type.
-- **Vary the lens.** One `callout` per doc (the assumptions), never a row of
-  them: several points are a `list`, a `spec`, a `faq`, or `takeaways`. A
-  third block of the same type is a warning (`W_LENS_REPEAT`). Reach past
-  the habitual four (`callout`, `table`, `sequence`, `flow`): ownership
-  across steps is a `swimlane`; code the reader will copy or diff is a
-  `code` block (`kind: compare` for before / after); terms are a
-  `glossary`; questions a reader will ask are a `faq`; a runbook is
-  `steps`; side-by-side snippets or nested diagrams are a `gallery`.
-  Before writing `table`, read the "table with a job" row: a grid whose
-  rows carry a status, score, definition, release, or finding has its own
-  block, and that block draws the status chips and derived values for you.
-- Diagram data (node names, messages, labels, values) is never trimmed to
-  fit. Split a dense diagram into two; `chiltepin check` warns at the caps.
-- Every arrow says what crosses it, as a verb phrase, never "uses". A `c4`
-  edge without a label is a warning; at container level add `tech` too.
-  Solid is a call, dashed is async or optional. Flow runs left to right or
-  top to bottom, one direction per diagram.
-- `sequence`, `flow`, `erd`, `state`, and pie `chart` also accept a
-  ```mermaid fence; `erd` accepts ```dbml and ```prisma. Subsets are in
-  `reference/mermaid.md`.
+  phrase into keys. Quote numbers that must be strings (`version: "1.0"`).
+  Always quote prose fields (`desc`, `note`, `summary`, `description`).
+  When unsure, write the body as JSON — it is valid YAML.
+- Prefer the terse one-line forms the contract prints (`a -> b: label`,
+  `Term — definition`). Use the object form only for a field the grammar
+  cannot say.
+- **The page contract.** A full doc starts with `meta`: `title`, `subtitle`
+  (the answer in one line, never the question), `tag` (the kind of doc),
+  and `status`, `owners`, `updated` when known. Your `##` heading is the
+  only document heading: it states the claim. A block's `title` renders as
+  its caption, "Fig. N · title": it names what the figure shows. `lede` is
+  a one-line takeaway above the figure (`reference/writing.md`).
+- **Links.** `[text](#id)` points back to an earlier block or heading;
+  `[text](doc#id)` points into another doc. Give a block an `id:` when a
+  link points at it. A missing target fails the check (`E_DANGLING_LINK`).
+- **Numbers.** Give each number a unit, a window or percentile, and a
+  baseline or target: "p95 over 7 d: 2.4 s → 600 ms". Set the block's
+  `unit` field when it has one. Cite the source in the `note` or the sentence.
+- Use the user's nouns verbatim, and one name for one thing in every block.
+- **Vary the lens.** A third `callout` or a fourth block of one type warns
+  (`W_LENS_REPEAT`). Reach past `callout`, `table`, `sequence`, `flow`:
+  code to copy → `code`; terms → `glossary`; reader questions → `faq`.
+- Never trim diagram data (names, messages, labels, values) to fit; split
+  the diagram. `sequence`, `flow`, `erd`, `state`, and pie `chart` also accept
+  ```mermaid, with fewer fields (`reference/mermaid.md`).
 
 ## Prose rules
 
-`reference/style-ste.md` is the authority. Between blocks: three sentences
-per paragraph by default, five at most. Every sentence carries a fact, a
-decision, or a consequence. Banned openers: "In this section", "This diagram
-shows", "It's important to note", "At a high level". Block text fields keep
-every fact in short active sentences. Diagram data is untouchable.
+`reference/style-ste.md` is the authority. Between blocks, a descriptive
+paragraph holds 6 sentences at most and a procedure 3; most need 2–4.
+Every sentence carries a fact, a decision, or a consequence. Banned
+openers: "In this section", "This diagram shows", "It's important to note",
+"At a high level". Block text fields keep every fact in short active
+sentences. Diagram data is untouchable.
 
 ## Read more only when the task needs it
 
 | File | When |
 |---|---|
-| `reference/blocks/INDEX.md` | Scanning every block with a one-line description (same as `chiltepin block`). |
-| `reference/blocks/<family>.md` | Choosing between neighbours in one family — discriminators and hard rules the schema cannot express. |
-| `reference/writing.md` | The full terse-form table, every YAML trap, `doc#id`, naming. |
+| `reference/kit.md` | Any `flow` or `block`: node kinds by hue, edges, groups, the Focus table, AI composition, splits, fit. |
+| `reference/blocks/<family>.md` | Choosing between neighbours in one family. |
+| `reference/recipes.md` | A whole document: the questions each kind of doc raises, and how it ends. |
+| `reference/writing.md` | The opening, headings, the page contract, `meta`, links, numbers, every YAML trap. |
 | `reference/check.md` | A diagnostic code you do not recognise. |
-| `reference/recipes.md` | Composing a whole document: architecture, ADR, API reference, incident, pipeline, agent system. |
-| `reference/patterns.md` | Anything with events, queues, streams, fan-out, outbox, CQRS, sagas, retries: which blocks draw each pattern and the trap. |
-| `reference/patterns-design.md` | A GoF or architectural design pattern (Strategy, Observer, CQRS, Circuit breaker …): the block stack that documents it. |
+| `reference/derivations/*.md` | Worked derivations: request facts → reader → outline. Reasoning only, no YAML. |
+| `reference/patterns.md` | Events, queues, streams, fan-out, outbox, CQRS, sagas, retries. |
+| `reference/patterns-design.md` | A GoF or architectural pattern: the blocks that document it. |
 | `reference/system-design.md` | Any "design an X" ask — the eight-step method. |
-| `reference/intake.md` | A new document with an unclear reader or scope — the questions to ask back. |
+| `reference/intake.md` | An unclear reader or scope — the questions to ask back, by reader. |
 | `reference/decks.md` | Any slides or deck ask. |
 | `reference/organizing.md` | Multi-doc work — file naming, splitting, index docs. |
-| `reference/exemplars/*.md` | Ten finished documents to model on. |

@@ -93,7 +93,8 @@ describe('runAudit (builtin source)', () => {
       const text = formatAudit(report, true);
       expect(text).toContain('source  builtin');
       expect(text).toContain('data-model');
-      expect(text).toContain('/chiltepin audit');
+      expect(text).toContain('chiltepin audit --json');
+      expect(text).toContain('ask your agent to write the docs you pick');
       expect(text).toContain('note:');
     } finally {
       await cleanup();

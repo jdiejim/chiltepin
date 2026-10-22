@@ -215,6 +215,25 @@ items:
 });
 
 describe('W_PROSE_TENSE', () => {
+  const tense = (s: string) => lint(`${s}\n`).filter((d) => d.code === 'W_PROSE_TENSE');
+
+  it('allows the present perfect with `since <time or event>` (incident and status prose)', () => {
+    expect(tense('The ledger has been failing since 09:00.')).toEqual([]);
+    expect(tense('The worker has retried 3 times since the deploy.')).toEqual([]);
+  });
+
+  it('allows the present perfect with `for <duration>`', () => {
+    expect(tense('The queue has grown for 40 minutes.')).toEqual([]);
+    expect(tense('Checkout has been degraded for 2h.')).toEqual([]);
+  });
+
+  it('still flags other non-simple tenses', () => {
+    expect(tense('The parser has failed twice.')).toHaveLength(1);
+    expect(tense('We had rolled back the deploy since the page fired.')).toHaveLength(1);
+    expect(tense('The worker is retrying every 30 seconds.')).toHaveLength(1);
+    expect(tense('The team has shipped it for the customer.')).toHaveLength(1);
+  });
+
   it('flags perfect tense anywhere', () => {
     const diags = lint('The parser has failed twice.\n');
     const hit = diags.find((d) => d.code === 'W_PROSE_TENSE');
@@ -294,6 +313,42 @@ describe('W_PROSE_FILLER_OPENER', () => {
 
   it('only fires at sentence start', () => {
     expect(codes('The doc covers this section.\n')).toEqual([]);
+  });
+});
+
+describe('meta phrases (W_PROSE_FILLER_OPENER)', () => {
+  it('flags a phrase that points at the brief the reader never saw', () => {
+    for (const s of [
+      'The request names no model, so this doc assumes Sonnet.',
+      'The request named no services.',
+      'The worker retries; the request named none.',
+      'The request does not name a region.',
+      'The fields are listed as requested.',
+      'See the closing list for open questions.',
+    ]) {
+      const hit = lint(`${s}\n`).find((d) => d.message.startsWith('Meta phrase'));
+      expect(hit?.code, s).toBe('W_PROSE_FILLER_OPENER');
+      expect(hit?.hint).toContain('assumption');
+    }
+  });
+
+  it('reads list items and table cells too, once each', () => {
+    const md = '```list\nitems:\n  - "On-call DBA — the request names no give-up path"\n```\n';
+    const hits = lint(md).filter((d) => d.message.startsWith('Meta phrase'));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.line).toBe(1);
+  });
+
+  it('never flags the HTTP request', () => {
+    for (const s of [
+      'The request body carries the order id.',
+      'An error sends the request to the wrong tool.',
+      'If the request does not specify a version, the API uses v2.',
+      'The request names the account in its path.',
+      'Only the request path is synchronous.',
+    ]) {
+      expect(lint(`${s}\n`).filter((d) => d.message.startsWith('Meta phrase')), s).toEqual([]);
+    }
   });
 });
 

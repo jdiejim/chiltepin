@@ -12,22 +12,29 @@
  * lines are `muted` curves and a node's label sits on a hairline in the
  * branch's tone. A branch `accent` is the author's colour-coding: `red` is
  * `negative`; one flagged branch takes the accent; two or more take the
- * series ramp in branch order, the way a chart tells its series apart.
+ * category hues (a branch is a category) — the hue the author named when it
+ * is one (`purple` is violet, `navy` is blue), else the next free hue, so two
+ * branches never share a colour. `gray` stays muted. Every hue clears 4.5:1
+ * as text on paper in both themes.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { seriesColor } from '../svg/dsTone.js';
+import { HUES, type Hue } from '../svg/hues.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
-import { wrapText } from '../svg/wrapText.js';
+import { FONT, cutTitle, ellipsize, fitText, textWidth } from '../svg/wrapText.js';
 import { bl, bp } from '../paths.js';
 import { diagramFrame } from './frame.js';
 
 type Node = BlockDataMap['mindmap']['nodes'][number];
 
 const CHARS_PER_LINE = 24;
+/** The most lines a node label grows to. */
+const MAX_LINES = 4;
 const CHAR_W = 7;
+/** The widest a note line gets (10px mono), px. */
+const NOTE_W = 170;
 const LINE_H = 15;
 const NOTE_H = 14;
 const ROW_GAP = 10;
@@ -43,16 +50,59 @@ interface Laid {
   readonly side: 1 | -1;
   readonly branch: number;
   readonly lines: string[];
+  /** The label (or its note) was cut: the node carries a `<title>` with the whole text. */
+  readonly tip: string;
   readonly w: number;
   y: number;
 }
 
-/** The tone of branch `k` (0-based among the flagged branches). */
-function branchTone(accent: string | undefined, flaggedIndex: number, flagged: number): string {
-  if (accent === 'red') return 'var(--negative)';
-  if (accent === undefined) return 'var(--muted)';
-  if (flagged === 1) return 'var(--accent)';
-  return seriesColor(flaggedIndex, flagged);
+/** The hue an accent name asks for, when it names one. */
+const NAMED_HUE: Readonly<Record<string, Hue>> = {
+  blue: 'blue',
+  navy: 'blue',
+  teal: 'teal',
+  green: 'green',
+  amber: 'amber',
+  purple: 'violet',
+  violet: 'violet',
+  rose: 'rose',
+};
+
+/**
+ * The tone of every branch, by branch number (the order the roots appear).
+ * `red` → negative; `gray` and no accent → muted; one flagged branch → the
+ * accent; several → hues, the named one first unless an earlier branch holds
+ * it, else the next free hue in rotation.
+ */
+export function branchTones(accents: readonly (string | undefined)[]): string[] {
+  const isFlag = (a: string | undefined): boolean => a !== undefined && a !== 'red' && a !== 'gray';
+  const flagged = accents.filter(isFlag).length;
+  const taken = new Set<Hue>();
+  let cursor = 0;
+  return accents.map((a) => {
+    if (a === 'red') return 'var(--negative)';
+    if (!isFlag(a)) return 'var(--muted)';
+    if (flagged === 1) return 'var(--accent)';
+    let hue = a !== undefined ? NAMED_HUE[a] : undefined;
+    if (hue === undefined || taken.has(hue)) {
+      hue = undefined;
+      for (let k = 0; k < HUES.length; k++) {
+        const h = HUES[(cursor + k) % HUES.length] as Hue;
+        if (!taken.has(h)) {
+          hue = h;
+          cursor = (cursor + k + 1) % HUES.length;
+          break;
+        }
+      }
+    }
+    // Past six flagged branches every hue is spent: the rotation repeats.
+    if (hue === undefined) {
+      hue = HUES[cursor % HUES.length] as Hue;
+      cursor += 1;
+    }
+    taken.add(hue);
+    return `var(--hue-${hue})`;
+  });
 }
 
 export function renderMindmap(data: BlockDataMap['mindmap']): string {
@@ -67,13 +117,11 @@ export function renderMindmap(data: BlockDataMap['mindmap']): string {
     else children.set(p, [...(children.get(p) ?? []), i]);
   });
 
-  // Tones: the author's per-branch colour-coding, resolved once per root.
-  const flaggedRoots = roots.filter((r) => nodes[r]?.accent !== undefined && nodes[r]?.accent !== 'red');
+  // Tones: the author's per-branch colour-coding, resolved once per branch
+  // and keyed by branch number — the key every lookup below uses.
+  const tones = branchTones(roots.map((r) => nodes[r]?.accent));
   const toneOf = new Map<number, string>();
-  roots.forEach((r) => {
-    const a = nodes[r]?.accent;
-    toneOf.set(r, branchTone(a, flaggedRoots.indexOf(r), flaggedRoots.length));
-  });
+  tones.forEach((t, bi) => toneOf.set(bi, t));
 
   const laid: Laid[] = [];
   const seen = new Set<number>();
@@ -84,9 +132,18 @@ export function renderMindmap(data: BlockDataMap['mindmap']): string {
     seen.add(i);
     const node = nodes[i];
     if (node === undefined) return 0;
-    const lines = wrapText(node.label, CHARS_PER_LINE, 2);
-    const w = Math.max(24, ...lines.map((ln) => ln.length * CHAR_W), (node.note !== undefined ? Math.min(node.note.length, CHARS_PER_LINE + 4) * 5.6 : 0));
-    const me: Laid = { node, index: i, depth, side, branch, lines, w, y: y0 };
+    // A label grows to four lines rather than lose words; past that it is cut
+    // and the node's tooltip keeps the whole label.
+    const fitted = fitText(node.label, {
+      width: CHARS_PER_LINE * CHAR_W,
+      font: FONT.name,
+      maxLines: MAX_LINES,
+      report: { field: 'label', path: `nodes.${i}.label`, hint: 'shorten the label, or move detail into `note`' },
+    });
+    const lines = fitted.lines;
+    const note = node.note !== undefined ? ellipsize(node.note, NOTE_W, FONT.sub, { field: 'note', path: `nodes.${i}.note` }) : undefined;
+    const w = Math.max(24, ...lines.map((ln) => textWidth(ln, FONT.name)), note !== undefined ? textWidth(note.lines[0] ?? '', FONT.sub) : 0);
+    const me: Laid = { node, index: i, depth, side, branch, lines, tip: cutTitle(fitted), w, y: y0 };
     laid.push(me);
     const kids = children.get(i) ?? [];
     if (kids.length === 0) return rowH(me);
@@ -129,8 +186,9 @@ export function renderMindmap(data: BlockDataMap['mindmap']): string {
     }
     return x;
   };
-  const centerLines = wrapText(data.center, CHARS_PER_LINE, 2);
-  const centerW = Math.max(60, ...centerLines.map((ln) => ln.length * 7.5)) + 28;
+  const centerFit = fitText(data.center, { width: CHARS_PER_LINE * CHAR_W, font: FONT.name, maxLines: 2, report: { field: 'center', path: 'center' } });
+  const centerLines = centerFit.lines;
+  const centerW = Math.max(60, ...centerLines.map((ln) => textWidth(ln, FONT.name))) + 28;
   const centerH = centerLines.length > 1 ? CENTER_H + LINE_H : CENTER_H;
   const leftW = extent(-1);
   const rightW = extent(1);
@@ -183,7 +241,7 @@ export function renderMindmap(data: BlockDataMap['mindmap']): string {
   s += `</g>`;
 
   // The centre pill.
-  s += `<g${bp('center')}><rect x="${r(cx - centerW / 2)}" y="${r(cy - centerH / 2)}" width="${r(centerW)}" height="${centerH}" rx="${centerH / 2}" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/>`;
+  s += `<g${bp('center')}>${cutTitle(centerFit)}<rect x="${r(cx - centerW / 2)}" y="${r(cy - centerH / 2)}" width="${r(centerW)}" height="${centerH}" rx="${centerH / 2}" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/>`;
   centerLines.forEach((ln, li) => {
     s += `<text x="${r(cx)}" y="${r(cy + 4.5 - ((centerLines.length - 1) * LINE_H) / 2 + li * LINE_H)}" class="t-name" text-anchor="middle">${escapeHtml(ln)}</text>`;
   });
@@ -198,12 +256,14 @@ export function renderMindmap(data: BlockDataMap['mindmap']): string {
     const anchor = l.side === 1 ? 'start' : 'end';
     const fill = tone !== 'var(--muted)' ? ` style="fill:${tone}"` : '';
     let g = `<g${bp(`nodes.${l.index}`)}>`;
+    g += l.tip;
     l.lines.forEach((ln, li) => {
       g += `<text x="${r(x)}" y="${r(top + 11 + li * LINE_H)}" class="t-name" text-anchor="${anchor}"${fill}>${escapeHtml(ln)}</text>`;
     });
     if (l.node.note !== undefined) {
-      const note = wrapText(l.node.note, CHARS_PER_LINE + 4, 1)[0] ?? '';
-      const title = note !== l.node.note ? `<title>${escapeHtml(l.node.note)}</title>` : '';
+      const fitted = ellipsize(l.node.note, NOTE_W, FONT.sub);
+      const note = fitted.lines[0] ?? '';
+      const title = cutTitle(fitted);
       g += `<text x="${r(x)}" y="${r(top + l.lines.length * LINE_H + 13)}" class="t-sub c-soft" text-anchor="${anchor}"${bp(`nodes.${l.index}.note`)}>${title}${escapeHtml(note)}</text>`;
     }
     g += `</g>`;
@@ -213,13 +273,13 @@ export function renderMindmap(data: BlockDataMap['mindmap']): string {
 
   // A legend only when the branches are colour-coded: one entry per tone.
   const items: LegendItem[] = [];
-  const tones = new Set<string>();
-  for (const rt of roots) {
-    const tone = toneOf.get(rt) ?? 'var(--muted)';
-    if (tone === 'var(--muted)' || tones.has(tone)) continue;
-    tones.add(tone);
+  const shown = new Set<string>();
+  roots.forEach((rt, bi) => {
+    const tone = toneOf.get(bi) ?? 'var(--muted)';
+    if (tone === 'var(--muted)' || shown.has(tone)) return;
+    shown.add(tone);
     items.push({ swatch: 'line', stroke: tone, label: nodes[rt]?.label ?? '', path: `nodes.${rt}` });
-  }
+  });
   const legend = renderLegend(items);
 
   return diagramFrame(

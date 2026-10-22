@@ -9,6 +9,7 @@ import {
   runInit,
   skillDir,
   stitchSkill,
+  DERIVATIONS_NOTE,
   templatesDir,
   SKILL_REFERENCE_FILES,
 } from '../commands/init.js';
@@ -94,7 +95,7 @@ describe('the skill folder', () => {
     expect(existsSync(templatesDir())).toBe(true);
   });
 
-  it('stitchSkill() joins the hub and the references, without the exemplars', async () => {
+  it('stitchSkill() joins the hub and the references, without the derivations', async () => {
     const md = await stitchSkill();
     expect(md.startsWith('---\nname: chiltepin')).toBe(true);
     expect(md).toContain('are included in full below — read them on demand');
@@ -103,9 +104,11 @@ describe('the skill folder', () => {
       const head = (await readFile(join(skillDir(), f), 'utf8')).split('\n')[0] ?? '';
       expect(md, `${f} should be stitched in`).toContain(head);
     }
-    // Exemplar bodies stay out of the single-file form.
-    const exemplar = await readFile(join(skillDir(), 'reference/exemplars/adr.md'), 'utf8');
-    const longest = exemplar.split('\n').reduce((a, b) => (b.length > a.length ? b : a), '');
+    // Worked derivations stay out of the single-file form, and the form says so.
+    const derivation = await readFile(join(skillDir(), 'reference/derivations/adr.md'), 'utf8');
+    const longest = derivation.split('\n').reduce((a, b) => (b.length > a.length ? b : a), '');
     expect(md).not.toContain(longest);
+    expect(md.endsWith(DERIVATIONS_NOTE)).toBe(true);
+    expect(DERIVATIONS_NOTE).toContain('are repo-only');
   });
 });

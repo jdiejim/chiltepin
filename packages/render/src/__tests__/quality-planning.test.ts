@@ -169,11 +169,10 @@ describe('chevrons', () => {
   });
 
   it('cuts a long label with an ellipsis and keeps the full text in a title', () => {
-    const html = renderChevrons({
-      steps: [{ label: 'A very long step label that cannot possibly fit in two lines' }, { label: 'Short' }],
-    });
+    const long = 'A very long step label that cannot possibly fit in the three lines a chevron of this width can hold, however wide';
+    const html = renderChevrons({ steps: [{ label: long }, { label: 'Short' }] });
     expect(html).toContain('…');
-    expect(html).toContain('<title>A very long step label that cannot possibly fit in two lines</title>');
+    expect(html).toContain(`<title>${long}</title>`);
   });
 });
 

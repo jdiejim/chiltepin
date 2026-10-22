@@ -79,10 +79,10 @@ const HELP_GROUPS: ReadonlyArray<{
   readonly header: string;
   readonly commands: readonly string[];
 }> = [
-  { header: 'WORK', commands: ['init', 'new', 'check', 'studio'] },
-  { header: 'OUTPUT', commands: ['html', 'slides', 'pdf', 'build'] },
+  { header: 'WORK', commands: ['init', 'new', 'check', 'review', 'studio'] },
+  { header: 'OUTPUT', commands: ['html', 'slides', 'pdf', 'shots', 'build'] },
   { header: 'REFERENCE', commands: ['block', 'demo'] },
-  { header: 'SETUP', commands: ['sync'] },
+  { header: 'SETUP', commands: ['sync', 'audit'] },
 ];
 
 /** The grouped command epilogue, shown after top-level help. Uncolored when
@@ -126,6 +126,18 @@ const COMMAND_EXAMPLES: Readonly<
     ['chiltepin check', 'validate every doc under docs/'],
     ['chiltepin check docs/api.md', 'validate one file'],
     ['chiltepin check --json', 'machine-readable diagnostics (CI)'],
+  ],
+  review: [
+    ['chiltepin review docs/design.md', 'check + look at every block: fit, cut, overlap, tiny, print; one line per issue'],
+    ['chiltepin review docs/design.md -o review/', 'write the contact sheet, block PNGs, and review.json to a folder'],
+    ['chiltepin review docs/design.md --json', 'the whole review as JSON (exit 1 on an error)'],
+  ],
+  shots: [
+    ['chiltepin shots docs/design.md', 'one PNG per diagram, and a fit note when one scrolls or shrinks'],
+  ],
+  audit: [
+    ['chiltepin audit', 'recommend the docs this codebase needs, with evidence'],
+    ['chiltepin audit --json', 'the same report as JSON, for an agent to act on'],
   ],
   studio: [
     ['chiltepin studio', 'open the studio — Edit · Site · Present, files stay the source of truth'],

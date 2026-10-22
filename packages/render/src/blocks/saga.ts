@@ -14,11 +14,16 @@
  * Accent rule: the step that fails (`failAt`, else the first step whose
  * `status` is `failed`) — accent outline on the accent tint, a `FAILED`
  * chip. Zero accent when nothing fails.
+ *
+ * Fit: text wraps and never drops (the cards grow). Past four steps, a row
+ * wider than the page column narrows its cards to fit it: the gaps tighten,
+ * the service eyebrow wraps, and the status chip takes its own row under it,
+ * so a six-step saga reads at full size instead of scrolling.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { wrapText } from '../svg/wrapText.js';
+import { wrapAll } from './wrapAll.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { revealAttr } from '../svg/reveal.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
@@ -34,12 +39,17 @@ const PAD_TOP = 22;
 const PAD_BOT = 18;
 /** Narrowest step card; cards grow uniformly to fit the longest text. */
 const MIN_W = 176;
-const GAP = 44;
+const GAP_FULL = 44;
 const COORD_H = 34;
 const COORD_GAP = 36;
 const COMP_GAP = 34;
 const NAME_CHARS = 22;
 const ACTION_CHARS = 28;
+/** The page column: a row of more than four steps wider than this narrows its cards. */
+const FIT_W = 1000;
+/** Compact cards (past four steps): the narrowest card and the tighter gap. */
+const MIN_W_COMPACT = 130;
+const GAP_COMPACT = 34;
 
 /** Approximate glyph widths per type role (px per character). */
 const NAME_PX = 7.4;
@@ -100,16 +110,12 @@ export function renderSaga(data: SagaData): string {
 
   // Text wraps (never truncates); the cards grow uniformly to the tallest
   // and widest content so the row stays aligned.
-  const nameLines = steps.map((s) => wrapText(s.name, NAME_CHARS, 3));
-  const actionLines = steps.map((s) => (s.action !== undefined ? wrapText(s.action, ACTION_CHARS, 2) : []));
-  const compLines = steps.map((s) => (s.compensate !== undefined ? wrapText(s.compensate, NAME_CHARS, 3) : []));
-  const maxName = Math.max(1, ...nameLines.map((l) => l.length));
-  const maxAction = Math.max(0, ...actionLines.map((l) => l.length));
-  const maxComp = Math.max(0, ...compLines.map((l) => l.length));
-  const hasComp = maxComp > 0;
-
-  const cardH = 30 + maxName * 15 + (maxAction > 0 ? maxAction * 13 + 4 : 0) + 8;
-  const compH = 22 + maxComp * 15 + 8;
+  const wrapAt = (nameChars: number, actionChars: number) => ({
+    nameLines: steps.map((s) => wrapAll(s.name, nameChars)),
+    actionLines: steps.map((s) => (s.action !== undefined ? wrapAll(s.action, actionChars) : [])),
+    compLines: steps.map((s) => (s.compensate !== undefined ? wrapAll(s.compensate, nameChars) : [])),
+  });
+  let { nameLines, actionLines, compLines } = wrapAt(NAME_CHARS, ACTION_CHARS);
 
   const widths: number[] = [MIN_W];
   steps.forEach((s, i) => {
@@ -121,12 +127,36 @@ export function renderSaga(data: SagaData): string {
     widths.push(longest(compLines[i] ?? []) * NAME_PX + 24);
   });
   let W = Math.ceil(Math.max(...widths));
+  let GAP = GAP_FULL;
+  // Past four steps a row wider than the page column narrows its cards: the
+  // service wraps and the status chip takes its own row (see the header).
+  const compact = n > 4 && PAD_X * 2 + n * W + (n - 1) * GAP > FIT_W;
+  if (compact) {
+    GAP = GAP_COMPACT;
+    W = Math.max(MIN_W_COMPACT, Math.floor((FIT_W - PAD_X * 2 - (n - 1) * GAP) / n));
+    ({ nameLines, actionLines, compLines } = wrapAt(
+      Math.floor((W - 24) / NAME_PX),
+      Math.floor((W - 24) / SUB_PX),
+    ));
+  }
   if (orchestrated) {
     // The coordinator band spans the row; its name must fit inside it.
     const inner = 14 + coordinator.length * NAME_PX + 12 + ORCH_CHIP.length * EYEBROW_PX + 10 + 14;
     const rowW = n * W + (n - 1) * GAP;
     if (inner > rowW) W = Math.ceil((inner - (n - 1) * GAP) / n);
   }
+  // The header: the step badge and the service (wrapped on a compact card),
+  // then — on a compact card — the status chip on a row of its own.
+  const svcLines = steps.map((s) => (compact ? wrapAll(s.service, Math.max(6, Math.floor((W - 34 - 10) / EYEBROW_PX))) : [s.service]));
+  const headExtra = (Math.max(1, ...svcLines.map((l) => l.length)) - 1) * 11;
+  const chipRow = compact && statuses.some((st) => CHIP_TEXT[st].length > 0) ? 18 : 0;
+  const maxName = Math.max(1, ...nameLines.map((l) => l.length));
+  const maxAction = Math.max(0, ...actionLines.map((l) => l.length));
+  const maxComp = Math.max(0, ...compLines.map((l) => l.length));
+  const hasComp = maxComp > 0;
+  const nameTop = 30 + headExtra + chipRow;
+  const cardH = nameTop + maxName * 15 + (maxAction > 0 ? maxAction * 13 + 4 : 0) + 8;
+  const compH = 22 + maxComp * 15 + 8;
 
   const xOf = (i: number): number => PAD_X + i * (W + GAP);
   const cxOf = (i: number): number => xOf(i) + W / 2;
@@ -227,16 +257,26 @@ export function renderSaga(data: SagaData): string {
       `<rect x="${x}" y="${stepY}" width="${W}" height="${cardH}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>` +
       `<circle cx="${x + 19}" cy="${headY}" r="7" fill="var(--paper)" stroke="${isAccent ? 'var(--accent)' : 'var(--muted)'}" stroke-width="1"/>` +
       `<text x="${x + 19}" y="${headY + 3}" class="t-badge${tc}" text-anchor="middle">${i + 1}</text>` +
-      `<text x="${x + 34}" y="${headY + 3}" class="t-eyebrow${tc}"${bp(`steps.${i}.service`)}>${escapeHtml(st.service)}</text>`;
+      (svcLines[i] ?? [])
+        .map(
+          (ln, j) =>
+            `<text x="${x + 34}" y="${headY + 3 + j * 11}" class="t-eyebrow${tc}"${j === 0 ? bp(`steps.${i}.service`) : ''}>${escapeHtml(ln)}</text>`,
+        )
+        .join('');
     const chipText = CHIP_TEXT[status];
-    if (chipText.length > 0) card += chipSvg(x + W - 10, headY, chipText, tone, true);
+    if (chipText.length > 0) {
+      // A compact card puts the chip on its own row, under the header.
+      card += compact
+        ? chipSvg(x + 12, stepY + 30 + headExtra + 4, chipText, tone, false)
+        : chipSvg(x + W - 10, headY, chipText, tone, true);
+    }
     const lines = nameLines[i] ?? [];
     lines.forEach((ln, j) => {
-      card += `<text x="${x + 12}" y="${stepY + 30 + 11 + j * 15}" class="t-name${isAccent ? ' c-accent' : ''}">${escapeHtml(ln)}</text>`;
+      card += `<text x="${x + 12}" y="${stepY + nameTop + 11 + j * 15}" class="t-name${isAccent ? ' c-accent' : ''}">${escapeHtml(ln)}</text>`;
     });
     const aLines = actionLines[i] ?? [];
     aLines.forEach((ln, j) => {
-      card += `<text x="${x + 12}" y="${stepY + 30 + maxName * 15 + 12 + j * 13}" class="t-sub"${j === 0 ? bp(`steps.${i}.action`) : ''}>${escapeHtml(ln)}</text>`;
+      card += `<text x="${x + 12}" y="${stepY + nameTop + maxName * 15 + 12 + j * 13}" class="t-sub"${j === 0 ? bp(`steps.${i}.action`) : ''}>${escapeHtml(ln)}</text>`;
     });
     // The compensation card, joined to its step by a short dotted connector.
     const cLines = compLines[i] ?? [];

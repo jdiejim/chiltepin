@@ -14,7 +14,7 @@
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
 import { bl, bp } from '../paths.js';
-import { highlightJson } from './endpoint.js';
+import { highlightJson, segmentBreaks } from './endpoint.js';
 
 type EventData = BlockDataMap['eventcontract'];
 type Field = NonNullable<EventData['schema']>[number];
@@ -86,9 +86,10 @@ export function renderEventcontract(data: EventData): string {
   const head =
     `<div class="evc-head">` +
     eyebrow +
-    `<span class="evc-name"${bp('name')}>${escapeHtml(data.name)}</span>` +
+    // A dotted name breaks only after a dot, never inside a segment.
+    `<span class="evc-name"${bp('name')}>${segmentBreaks(data.name, '.')}</span>` +
     (data.channel !== undefined
-      ? `<span class="evc-channel"${bp('channel')}><span class="t-eyebrow">channel</span>${escapeHtml(data.channel)}</span>`
+      ? `<span class="evc-channel"${bp('channel')}><span class="t-eyebrow">channel</span><span>${segmentBreaks(data.channel, '.')}</span></span>`
       : '') +
     `</div>`;
 

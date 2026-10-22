@@ -11,6 +11,7 @@ import { renderFishbone } from '../blocks/fishbone.js';
 import { renderStorymap } from '../blocks/storymap.js';
 import { renderSlopegraph } from '../blocks/slopegraph.js';
 import { renderTree } from '../blocks/tree.js';
+import { FONT, textWidth } from '../svg/wrapText.js';
 
 describe('gitgraph', () => {
   const RELEASE = {
@@ -314,7 +315,8 @@ describe('fishbone', () => {
 
   it('carries the full text in a <title> exactly where truncation happened', () => {
     const long = Array.from({ length: 60 }, () => 'word').join(' ');
-    const longItem = Array.from({ length: 12 }, () => 'item').join(' '); // 59 chars
+    // Items wrap to three lines before they cut: 24 words (119 chars) do not fit.
+    const longItem = Array.from({ length: 24 }, () => 'item').join(' ');
     const clamped = renderFishbone({
       effect: long,
       causes: [{ label: long, items: [longItem, 'short item'] }],
@@ -380,7 +382,7 @@ describe('storymap', () => {
     expect(html).toContain('data-bp="slices.1.cells.0.1"');
   });
 
-  it('keeps fixed column widths at 1 and at 10 backbone steps (rows align, no squeeze)', () => {
+  it('shares the row between flexible columns, down to a floor at 10 backbone steps (rows align, no squeeze)', () => {
     const one = renderStorymap({
       backbone: [{ label: 'Only' }],
       slices: [{ label: 'MVP', cells: [['A']] }],
@@ -392,8 +394,10 @@ describe('storymap', () => {
         { label: 'MVP', cells: Array.from({ length: 10 }, () => ['One card']) },
       ],
     });
-    // Row min-width grows with the column count instead of shrinking columns.
-    expect(ten).toContain(`min-width:${128 + 10 * 170}px`);
+    // Columns flex to fill the row; the row's min-width (the column floor ×
+    // count) is what makes a long map scroll instead of squeezing columns.
+    expect(ten).toContain(`min-width:${128 + 10 * 132}px`);
+    expect(houseCss).toContain('.docskin .sm-colcell{flex:1 1 0;padding:4px 5px;min-width:132px;}');
     expect(parse(ten).querySelectorAll('.sm-card')).toHaveLength(10);
   });
 
@@ -931,18 +935,21 @@ describe('tree variant: org', () => {
     expect(root.querySelectorAll('path[stroke="var(--muted)"]')).toHaveLength(1);
   });
 
-  it('wraps a 400-char label to two clipped lines and keeps the full text in <title>', () => {
+  it('wraps a 400-char label to at most three lines inside the card, ends the cut with "…", and keeps the full text in <title>', () => {
     const long = Array.from({ length: 50 }, () => 'verylong').join(' ');
     const root = parse(
       renderTree({ variant: 'org' as const, nodes: [{ id: 'a', label: long, role: 'R'.repeat(60) }] }),
     );
     const g = root.querySelector('g[data-bp="nodes.0"]');
     const lines = g?.querySelectorAll('text.t-name') ?? [];
-    expect(lines).toHaveLength(2);
-    for (const ln of lines) expect(ln.text.length).toBeLessThanOrEqual(22);
+    expect(lines).toHaveLength(3);
+    for (const ln of lines) expect(textWidth(ln.text, FONT.name)).toBeLessThanOrEqual(148 - 12);
+    expect(lines[2]?.text.endsWith('…')).toBe(true);
     expect(g?.querySelector('title')?.text).toContain(long);
-    // The role clips to one ellipsized line.
-    expect(g?.querySelector('text[data-bp="nodes.0.role"]')?.text.endsWith('…')).toBe(true);
+    // The role wraps to two lines at most; the second ends in "…".
+    const roles = g?.querySelectorAll('text.t-sub') ?? [];
+    expect(roles).toHaveLength(2);
+    expect(roles[1]?.text.endsWith('…')).toBe(true);
   });
 
   it('renders a single node and leaves the default + issue variants untouched', () => {

@@ -117,28 +117,34 @@ describe('renderDocumentSegments', () => {
   });
 });
 
-describe('section-head data paths (v7)', () => {
-  it('tags every block’s top-level title and lede in the section head', () => {
+describe('figure caption data paths', () => {
+  it('tags every block’s top-level title (the caption) and lede', () => {
     const doc = parseDocument(
       '```meta\ntitle: T\n```\n\n```flow\ntitle: My flow\nlede: The intro line.\nnodes:\n  - { id: a, label: A }\n```\n',
       'x',
     );
     const seg = renderDocumentSegments(doc, {});
     const html = seg.segments.map((s) => s.html).join('');
-    expect(html).toContain('<h2 class="section-title" data-bp="title">My flow</h2>');
+    // The caption fills the frame's .diagram-title slot.
+    expect(html).toContain(
+      '<span class="diagram-title fig-caption" id="fig-my-flow"><span class="fig-num">Fig.&nbsp;1</span><span class="fig-sep" aria-hidden="true"> · </span><span class="fig-title" data-bp="title">My flow</span></span>',
+    );
     expect(html).toContain('<p class="section-lede" data-bp="lede">The intro line.</p>');
+    // The lede sits above the figure.
+    expect(html.indexOf('section-lede')).toBeLessThan(html.indexOf('class="diagram"'));
   });
 
-  it('renders a bare section head (no title/lede) as just the eyebrow — no empty h2, no rule band', () => {
-    // divider OWNS its title, so the section head has neither title nor lede.
+  it('renders a block that owns its title with no caption and no section head', () => {
+    // divider OWNS its title, so the page adds no caption around it.
     const doc = parseDocument(
       '```meta\ntitle: T\n```\n\n```divider\nkicker: PART 2\ntitle: What we change\n```\n',
       'x',
     );
     const seg = renderDocumentSegments(doc, {});
     const html = seg.segments.map((s) => s.html).join('');
-    expect(html).toContain('<div class="section-head bare">');
-    expect(html).not.toContain('<h2 class="section-title" data-bp="title"></h2>');
+    expect(html).not.toContain('section-head');
+    expect(html).not.toContain('fig-caption');
+    expect(html).toContain('What we change');
     // section id + index still work
     expect(seg.sections.map((s) => s.id)).toEqual(['section-01']);
   });

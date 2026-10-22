@@ -111,17 +111,121 @@ describe('buildSite', () => {
     expect(nested?.html).toContain('href="../a.html">Doc A</a>');
   });
 
-  it('renders a sidebar with every doc, the current one highlighted, and its sections', () => {
-    const { pages } = buildSite(load());
+  it('renders a sidebar with every doc by folder, the current one highlighted, and its headings', () => {
+    const docs = [
+      ...load(),
+      {
+        slug: 'h',
+        file: 'docs/h.md',
+        doc: parseDocument('```meta\ntitle: With headings\n```\n\n## Order flow\n\nText.\n\n### Retries\n\nMore.\n', 'h'),
+      },
+    ];
+    const { pages } = buildSite(docs);
     const a = pages.find((p) => p.path === 'a.html');
     expect(a?.html).toContain('<a class="current" href="a.html">Doc A</a>');
     expect(a?.html).toContain('href="b.html">Doc B</a>');
     expect(a?.html).toContain('href="guides/x.html">Nested guide</a>');
-    // Current doc's section list links #section-NN.
-    expect(a?.html).toContain('<a href="#section-01">A flow</a>');
-    // Other docs don't get section lists.
-    const b = pages.find((p) => p.path === 'b.html');
-    expect(b?.html).not.toContain('<a href="#section-01">A flow</a>');
+    // Root docs first, then each top folder under its own eyebrow.
+    expect(a?.html).toContain('<div class="nav-head site-eyebrow">Documents</div>');
+    expect(a?.html).toContain('<div class="nav-head site-eyebrow">guides</div>');
+    // Doc A has no headings: no section list (block titles are not sections).
+    expect(a?.html).not.toContain('class="nav-sections"');
+    // The current doc lists its ## / ### headings, and the page carries the ids.
+    const h = pages.find((p) => p.path === 'h.html')?.html ?? '';
+    expect(h).toContain('<div class="nav-sections"><a href="#order-flow">Order flow</a><a class="h3" href="#retries">Retries</a></div>');
+    expect(h).toContain('<h2 id="order-flow">');
+    expect(h).toContain('<h3 id="retries">');
+  });
+
+  it('folds the menu under 900px, filters titles and headings, and never prints the chrome', () => {
+    const { pages, files } = buildSite(load());
+    const a = pages.find((p) => p.path === 'a.html')?.html ?? '';
+    expect(a).toContain('<details class="nav-fold" open><summary>Menu</summary>');
+    expect(a).toContain('<input class="nav-search" type="search"');
+    expect(a).toContain('window.__chiltepinSearch=');
+    expect(a).toContain('@media print{.site-nav,.site-bar,.view-toggle{display:none!important;}');
+    const search = JSON.parse(files.find((f) => f.path === 'search.json')?.content ?? '[]') as { u: string; t: string }[];
+    // Root docs first, ordered by tag (API before GUIDE), then each folder.
+    expect(search.map((e) => e.u)).toEqual(['b.html', 'a.html', 'guides/x.html']);
+  });
+
+  it('puts the Doc | Slides toggle in a bar above the cover, not over it', () => {
+    const { pages } = buildSite(load());
+    const a = pages.find((p) => p.path === 'a.html')?.html ?? '';
+    const bar = a.indexOf('<div class="site-bar">');
+    expect(bar).toBeGreaterThan(0);
+    expect(bar).toBeLessThan(a.indexOf('<div class="docskin">'));
+    expect(a).not.toContain('position:absolute;top:30px;right:32px');
+  });
+
+  it('with sharedAssets writes the CSS and the script once and links them', () => {
+    const { pages, files } = buildSite(load(), { sharedAssets: true });
+    expect(files.map((f) => f.path).sort()).toEqual(['assets/chiltepin.css', 'assets/chiltepin.js', 'search.json']);
+    const nested = pages.find((p) => p.path === 'guides/x.html')?.html ?? '';
+    expect(nested).toContain('<link rel="stylesheet" href="../assets/chiltepin.css">');
+    expect(nested).toContain('<script src="../assets/chiltepin.js" defer></script>');
+    expect(nested).not.toContain('.docskin{');
+    // The shared sheet is most of what an inline page repeated.
+    const inline = buildSite(load()).pages.find((p) => p.path === 'guides/x.html')?.html ?? '';
+    expect(nested.length).toBeLessThan(inline.length / 3);
+  });
+
+  it('rewrites prose links to the built pages, on the page and in the deck', () => {
+    const docs = [
+      ...load(),
+      {
+        slug: 'guides/l',
+        file: 'docs/guides/l.md',
+        doc: parseDocument(
+          '```meta\ntitle: Links\n```\n\n## Here\n\nSee [B](b#seq-b), [A](../a.md#seq-a), [x](./x.md), [here](#here), [web](https://x.dev/a.md), and [gone](nope#a).\n',
+          'guides/l',
+        ),
+      },
+    ];
+    const { pages } = buildSite(docs);
+    const page = pages.find((p) => p.path === 'guides/l.html')?.html ?? '';
+    expect(page).toContain('<a href="../b.html#seq-b">B</a>');
+    expect(page).toContain('<a href="../a.html#seq-a">A</a>');
+    expect(page).toContain('<a href="../guides/x.html">x</a>');
+    expect(page).toContain('<a href="#here">here</a>');
+    expect(page).toContain('<a href="https://x.dev/a.md">web</a>');
+    expect(page).toContain('<a href="nope#a">gone</a>');
+    const deck = pages.find((p) => p.path === 'guides/l.slides.html')?.html ?? '';
+    expect(deck).toContain('href="../b.html#seq-b"');
+    expect(deck).toContain('href="l.html#here"');
+  });
+
+  it('rewrites ref chips in the deck too', () => {
+    const { pages } = buildSite(load());
+    const deck = pages.find((p) => p.path === 'a.slides.html')?.html ?? '';
+    expect(deck).toContain('data-ref="b#seq-b" href="b.html#seq-b"');
+    expect(deck).toContain('data-ref="#seq-a" href="a.html#seq-a"');
+  });
+
+  it('lists local images and the meta logo to copy, and leaves URLs alone', () => {
+    const docs = [
+      {
+        slug: 'guides/img',
+        file: 'docs/guides/img.md',
+        doc: parseDocument(
+          '```meta\ntitle: Images\nlogo: ../brand/logo.svg\n```\n\n![Map](./map.png) ![Root](../../assets/hero.png) ![Web](https://x.dev/a.png)\n',
+          'guides/img',
+        ),
+      },
+    ];
+    const { assets, pages } = buildSite(docs);
+    expect(assets).toEqual(
+      expect.arrayContaining([
+        { from: 'docs/brand/logo.svg', to: 'brand/logo.svg' },
+        { from: 'docs/guides/map.png', to: 'guides/map.png' },
+        { from: 'assets/hero.png', to: 'assets/files/assets/hero.png' },
+      ]),
+    );
+    expect(assets).toHaveLength(3);
+    const page = pages.find((p) => p.path === 'guides/img.html')?.html ?? '';
+    expect(page).toContain('src="./map.png"');
+    expect(page).toContain('src="../assets/files/assets/hero.png"');
+    expect(page).toContain('src="https://x.dev/a.png"');
   });
 
   it('builds an index card grid from each doc meta', () => {
@@ -131,6 +235,12 @@ describe('buildSite', () => {
     expect(index?.html).toContain('<span class="idx-tag">GUIDE</span>');
     expect(index?.html).toContain('<h2>Doc A</h2>');
     expect(index?.html).toContain('<p>The first document</p>');
+    const md = buildSite([
+      { slug: 'm', file: 'docs/m.md', doc: parseDocument('```meta\ntitle: M\nsubtitle: "Uses `POST /orders` and **idempotency keys**"\n```\n', 'm') },
+    ]);
+    expect(md.pages.find((p) => p.path === 'index.html')?.html).toContain(
+      '<p>Uses <code>POST /orders</code> and <strong>idempotency keys</strong></p>',
+    );
     expect(index?.html).toContain('<a class="idx-card" href="guides/x.html">');
     expect(index?.html).toContain('<h2>Nested guide</h2>');
   });
@@ -177,13 +287,12 @@ describe('buildSite', () => {
     for (const p of byDefault.pages) {
       expect(explicit.pages.find((r) => r.path === p.path)?.html).toBe(p.html);
     }
-    // These three docs tag uniquely (GUIDE, API, folder) — the degeneracy
-    // fallback keeps the flat card grid, no digest, no group headers; only
-    // the cross-reference graph section is added.
+    // Two top folders (the root with GUIDE and API, and guides/): the index
+    // groups by folder, then by tag inside the root.
     const index = byDefault.pages.find((p) => p.path === 'index.html');
-    expect(index?.html).toContain('<div class="idx-grid">');
-    expect(index?.html).not.toContain('class="idx-tldr"');
-    expect(index?.html).not.toContain('class="idx-group"');
+    expect(index?.html).toContain('class="idx-tldr"');
+    expect(index?.html).toContain('<section class="idx-group" id="group-documents">');
+    expect(index?.html).toContain('<section class="idx-group" id="group-guides">');
     expect(index?.html).toContain('class="idx-graph"');
   });
 
@@ -265,39 +374,44 @@ describe('buildSite rich index', () => {
     const index = pages.find((p) => p.path === 'index.html');
     expect(index?.html).toContain('<div class="idx-eyebrow site-eyebrow">5 documents</div>');
     // Multi-doc group line: label + count only — no single doc's subtitle.
-    expect(index?.html).toContain(
-      '<a href="#group-guide"><strong>Guide</strong> · 2 documents</a>',
-    );
-    expect(index?.html).toContain('<a href="#group-api"><strong>API</strong> · 2 documents</a>');
+    expect(index?.html).toContain('<a href="#group-documents"><strong>Documents</strong> · 4 documents</a>');
     // A group of one keeps its doc's subtitle as the one-liner.
-    expect(index?.html).toContain(
-      '<a href="#group-notes"><strong>notes</strong> · 1 document — A nested note</a>',
-    );
+    expect(index?.html).toContain('<a href="#group-notes"><strong>notes</strong> · 1 document — A nested note</a>');
   });
 
-  it('groups cards by the first tag token (case-insensitive), folder fallback, largest first', () => {
+  it('groups cards by top folder first (root first), then by tag token inside a folder', () => {
     const { pages } = buildSite(loadRich(), { richIndex: true });
-    const index = pages.find((p) => p.path === 'index.html');
-    const html = index?.html ?? '';
-    // Guide + GUIDE merge into one group of 2; label keeps first-seen casing.
+    const html = pages.find((p) => p.path === 'index.html')?.html ?? '';
     expect(html).toContain(
-      '<section class="idx-group" id="group-guide"><h2 class="idx-group-head">Guide<span class="idx-group-count">2</span></h2>',
+      '<section class="idx-group" id="group-documents"><h2 class="idx-group-head">Documents<span class="idx-group-count">4</span></h2>',
     );
-    // Compound badge "API · v2" groups by its first token with plain "API".
-    expect(html).toContain(
-      '<section class="idx-group" id="group-api"><h2 class="idx-group-head">API<span class="idx-group-count">2</span></h2>',
-    );
-    const apiSection = html.slice(html.indexOf('id="group-api"'), html.indexOf('id="group-guide"'));
-    expect(apiSection).toContain('<a class="idx-card" href="r5.html">');
-    // Untagged nested doc falls back to its top-level folder.
-    expect(html).toContain('<h2 class="idx-group-head">notes<span class="idx-group-count">1</span></h2>');
-    // Largest groups first; equal sizes order by label (API before Guide).
-    expect(html.indexOf('id="group-api"')).toBeLessThan(html.indexOf('id="group-guide"'));
-    expect(html.indexOf('id="group-guide"')).toBeLessThan(html.indexOf('id="group-notes"'));
-    // Cards keep their current look inside groups.
-    expect(html).toContain('<a class="idx-card" href="r1.html">');
+    expect(html).toContain('<section class="idx-group" id="group-notes"><h2 class="idx-group-head">notes<span class="idx-group-count">1</span></h2>');
+    expect(html.indexOf('id="group-documents"')).toBeLessThan(html.indexOf('id="group-notes"'));
+    // Inside the root: tag sub-groups (case-insensitive first token), largest first, ties by label.
+    expect(html).toContain('<div class="idx-sub-head site-eyebrow">API · 2</div>');
+    expect(html).toContain('<div class="idx-sub-head site-eyebrow">Guide · 2</div>');
+    expect(html.indexOf('API · 2')).toBeLessThan(html.indexOf('Guide · 2'));
+    const api = html.slice(html.indexOf('API · 2'), html.indexOf('Guide · 2'));
+    expect(api).toContain('<a class="idx-card" href="r3.html">');
+    expect(api).toContain('<a class="idx-card" href="r5.html">');
     // The full compound badge stays on the card — only grouping uses the token.
     expect(html).toContain('<span class="idx-tag">API · v2</span>');
+  });
+
+  it('labels the tags in the sidebar only where a folder groups docs by tag', () => {
+    const { pages } = buildSite(loadRich());
+    const html = pages.find((p) => p.path === 'r1.html')?.html ?? '';
+    // Root: 4 docs, 2 tags (API, Guide) — labelled; notes/: 1 doc — not.
+    expect(html).toContain('<span class="nav-tag">API</span>');
+    expect(html).toContain('<span class="nav-tag">Guide</span>');
+    expect(html.match(/class="nav-tag"/g)).toHaveLength(2);
+  });
+
+  it('groups a flat docs folder by tag', () => {
+    const flat = loadRich().filter((d) => !d.slug.includes('/'));
+    const html = buildSite(flat, { richIndex: true }).pages.find((p) => p.path === 'index.html')?.html ?? '';
+    expect(html).toContain('<section class="idx-group" id="group-api"><h2 class="idx-group-head">API<span class="idx-group-count">2</span></h2>');
+    expect(html).toContain('<section class="idx-group" id="group-guide"><h2 class="idx-group-head">Guide<span class="idx-group-count">2</span></h2>');
   });
 
   it('normalizes tag casing on cards inside a group to the first-seen form', () => {

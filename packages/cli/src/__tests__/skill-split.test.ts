@@ -1,19 +1,20 @@
 /**
  * Guards the skill's reference/blocks/ split: every canonical block type in
  * chiltepin-core's BLOCK_TYPES is documented in exactly one family file (its
- * `#### \`name\`` heading), alias spellings appear only in the INDEX alias
- * table, and the block-count strings cannot drift from BLOCK_TYPES.length.
+ * `#### \`name\`` heading), that file is the one its catalog family names,
+ * alias spellings appear in no family heading, and the block-count strings
+ * cannot drift from BLOCK_TYPES.length. `chiltepin block` prints the family
+ * list and the aliases, so no hand-written index exists to drift.
  */
 
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { BLOCK_ALIASES, BLOCK_TYPES } from 'chiltepin-core';
+import { BLOCK_ALIASES, BLOCK_FAMILY, BLOCK_TYPES } from 'chiltepin-core';
 import { SKILL_REFERENCE_FILES, skillDir } from '../commands/init.js';
 
 const SKILL_DIR = skillDir();
 const BLOCKS_DIR = join(SKILL_DIR, 'reference/blocks');
-const NON_FAMILY = new Set(['INDEX.md']);
 
 /** Block names claimed by a family file = every `name` in its #### headings. */
 function headingNames(md: string): string[] {
@@ -28,7 +29,7 @@ function headingNames(md: string): string[] {
 
 describe('reference/blocks family files', () => {
   const familyFiles = readdirSync(BLOCKS_DIR)
-    .filter((f) => f.endsWith('.md') && !NON_FAMILY.has(f))
+    .filter((f) => f.endsWith('.md'))
     .sort();
 
   it('every BLOCK_TYPES name appears in exactly one family file — canonical only', () => {
@@ -58,30 +59,30 @@ describe('reference/blocks family files', () => {
     }
   });
 
-  it('INDEX.md maps every block type to an existing family file', () => {
-    const index = readFileSync(join(BLOCKS_DIR, 'INDEX.md'), 'utf8');
+  it('each block sits in the family file its catalog family names', () => {
+    // The catalog family `charts` is the `charts-overviews.md` sheet.
+    const fileOf = (family: string): string =>
+      family === 'charts' ? 'charts-overviews.md' : `${family}.md`;
     for (const t of BLOCK_TYPES) {
-      expect(index, `INDEX.md row for \`${t}\``).toMatch(
-        new RegExp(`^\\| \`${t}\` \\| \`[a-z-]+\\.md\` \\|`, 'm'),
-      );
-    }
-    for (const file of index.matchAll(/\| `([a-z-]+\.md)` \|/g)) {
-      expect(familyFiles, `INDEX.md points at ${file[1]}`).toContain(file[1]);
-    }
-    for (const alias of Object.keys(BLOCK_ALIASES)) {
-      expect(index, `INDEX.md must not map alias \`${alias}\` to a family file`).not.toMatch(
-        new RegExp(`^\\| \`${alias}\` \\| \`[a-z-]+\\.md\` \\|`, 'm'),
-      );
+      const file = fileOf(BLOCK_FAMILY[t]);
+      expect(familyFiles, `family file for ${t}`).toContain(file);
+      const md = readFileSync(join(BLOCKS_DIR, file), 'utf8');
+      expect(headingNames(md), `${file} documents \`${t}\``).toContain(t);
     }
   });
 
-  it('INDEX.md carries the alias → canonical table', () => {
-    const index = readFileSync(join(BLOCKS_DIR, 'INDEX.md'), 'utf8');
-    for (const [alias, def] of Object.entries(BLOCK_ALIASES)) {
-      expect(index, `INDEX.md alias row for \`${alias}\` → \`${def.type}\``).toMatch(
-        new RegExp(`^\\| \`${alias}\` \\| \`${def.type}\` \\|`, 'm'),
-      );
+  it('no family heading names an alias', () => {
+    for (const file of familyFiles) {
+      const names = headingNames(readFileSync(join(BLOCKS_DIR, file), 'utf8'));
+      for (const alias of Object.keys(BLOCK_ALIASES)) {
+        expect(names, `${file} heading names alias \`${alias}\``).not.toContain(alias);
+      }
     }
+  });
+
+  it('the hand-written block index is gone', () => {
+    // `chiltepin block` prints the families and the aliases from the registry.
+    expect(existsSync(join(BLOCKS_DIR, 'INDEX.md'))).toBe(false);
   });
 
   it('skill count strings match BLOCK_TYPES.length (drift guard)', () => {
@@ -89,8 +90,6 @@ describe('reference/blocks family files', () => {
     const skill = readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf8');
     expect(skill).toContain(`${n} block types`);
     expect(skill).toContain(`lists all ${n}`);
-    const index = readFileSync(join(BLOCKS_DIR, 'INDEX.md'), 'utf8');
-    expect(index).toContain(`# The ${n} block types`);
   });
 
   it('no skill file points at the deleted contract.md or the old install paths', () => {
@@ -111,11 +110,11 @@ describe('reference/blocks family files', () => {
     }
   });
 
-  it('every family file and INDEX is in the canonical stitch list', () => {
+  it('every family file is in the canonical stitch list', () => {
     const listed = SKILL_REFERENCE_FILES.filter((f) => f.includes('reference/blocks/')).map((f) =>
       f.slice(f.lastIndexOf('/') + 1),
     );
-    expect([...listed].sort()).toEqual([...familyFiles, 'INDEX.md'].sort());
+    expect([...listed].sort()).toEqual([...familyFiles].sort());
   });
 
   it('recipes.md and style-ste.md sit in the stitch list, in order', () => {
@@ -126,6 +125,18 @@ describe('reference/blocks family files', () => {
     const idx = (f: string): number => SKILL_REFERENCE_FILES.indexOf(`reference/${f}`);
     expect(idx('style-ste.md')).toBeGreaterThan(idx('intake.md'));
     expect(idx('style-ste.md')).toBe(idx('organizing.md') + 1);
+  });
+
+  it('worked derivations carry reasoning only — no typed block to copy', () => {
+    // The derivations replaced ten finished YAML documents that agents filled
+    // in as templates. A fenced block here would bring that failure back.
+    const dir = join(SKILL_DIR, 'reference/derivations');
+    const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
+    expect(files.length).toBeGreaterThanOrEqual(10);
+    for (const f of files) {
+      const md = readFileSync(join(dir, f), 'utf8');
+      expect(md, `${f} holds a fenced block`).not.toMatch(/^\s*(```|~~~)/m);
+    }
   });
 
   it('every listed reference file exists', () => {

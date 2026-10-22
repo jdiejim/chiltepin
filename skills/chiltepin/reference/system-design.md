@@ -12,15 +12,19 @@ that carries it:
 
 1. **Requirements — ask, then pin them down.** Functional (what it does) and
    non-functional (scale, latency, consistency, durability). If the user gave no
-   scale or constraints, **ask back** (move 1 of the method in `SKILL.md`; checklists in `intake.md`). Emit `drivers` — each driver a
-   real requirement with its consequence, never a platitude.
+   scale or constraints, **ask back** (step 1 of the loop in `SKILL.md`;
+   checklists in `intake.md`). Emit `drivers` when the requirements carry
+   consequences — each driver a real requirement, never a platitude.
 2. **Envelope math.** Users × actions × fan-out → QPS, storage/day, peak factor.
-   Emit `stats` with the numbers that justify the architecture — skip when scale
-   genuinely isn't the story.
+   Emit `envelope`: the givens, one row per derivation step, and the bottom
+   line the design must meet. Use `stats` only for measured numbers. Skip the
+   step when scale is not the story.
 3. **Contract.** The API surface (`endpoint` per route that matters) and the data
    model (`erd`). These fix the names every later block reuses.
 4. **High level, shaped by the dominant motion.** Request/reply system → `c4`;
-   things flowing through stages → `block` (`preset: event`) or `dfd`;
+   one request through DNS, load balancer, cache, database and queue → `block`
+   with numbered `step`s (below); things flowing through stages → `block`
+   (`preset: event`) or `dfd`;
    deployment/regions/zones → `block` (`preset: infra`); a k8s estate →
    `cluster`. One overview diagram of the whole system, using the real names
    from step 3.
@@ -29,8 +33,10 @@ that carries it:
    - hot reads → caching + invalidation (a `sequence` of the miss path)
    - write spikes → queue + backpressure (a `flow` with the shed path)
    - fan-out → push vs pull (`options`, then the chosen `sequence`)
-   - cross-service consistency → outbox/saga (a `state` of the saga)
+   - cross-service consistency → outbox or saga (a `saga` with `failAt` on
+     the step that fails, or a `state` of the outbox row)
    - geo-latency → replication + CDN (a `preset: infra` `block` per region)
+   - a latency budget → `spans` of the slow path, or a waterfall `chart`
 
    One or two deep dives, chosen by the numbers from step 2 — never a fixed list.
 6. **Trade-offs on the record.** The genuine alternatives as `options` (with
@@ -39,8 +45,9 @@ that carries it:
 7. **Failure & operations.** What breaks, the blast radius, how it degrades: a
    `table` of failure modes → responses, `kind: error`/`forbidden` edges on the
    diagrams, a `flow` of the degradation path.
-8. **Plan.** `timeline` for phasing, `statustable` for the open questions you
-   asked in step 1 but didn't get answered.
+8. **What happens next.** The doc ends here: the open decisions with who
+   decides each (`faq`), and the follow-up work with owners (`statustable`).
+   A `timeline` of phases comes before them only when the request has dates.
 
 **Patterns are ingredients, not the meal.** When a named pattern is load-bearing
 (pub-sub, saga, circuit breaker, CQRS, …), write it as a `pattern` card plus
@@ -56,106 +63,63 @@ dominated by step 5 fan-out math, a payments integration by step 7 failure
 semantics. **If two of your design docs share the same section list, you skipped
 step 5.**
 
+## Architecture views — one overview, then one zoom
 
-## Architecture and topology (which one when?)
+`blocks/architecture.md` picks between `c4`, `block` (and its presets
+`infra`, `event`, `ddd`, `network`, `k8s`), and `cluster`; `kit.md` has the
+node kinds, edges, and fit fixes. Show the whole system once (`c4` context,
+or a `block` landscape), then zoom into the one or two places the doc is
+about: `felogic` for a module's internals, a `preset: infra` `block` or
+`cluster` for deployment, a `sequence` for the runtime of one path. Never
+redraw the same boxes in a second engine. Stitch the levels with prose and
+a link: "inside [the `api` container](#context): …".
 
-| If you want to show… | Use | Notes |
-|---|---|---|
-| Who uses the system + which external systems it depends on | `c4` (level: context) | One node per actor / system |
-| Containers inside a system, with optional boundary box | `c4` (level: container) | Use `family` to colour-code (client / service / data / store) |
-| Components inside one container | `c4` (level: component) | Same shape, finer granularity |
-| Generic boxes-and-arrows architecture | `block` | Grid layout; add `groups` for dashed zones; add `layers` to switch to horizontal-band layout |
-| Cloud deployment (CDN, gateway, compute, DB, …) | `block` (`preset: infra`) | Same engine; the preset frames it for cloud topology |
-| Pub/sub event topology (producers → topics → consumers) | `block` (`preset: event`) | Same engine; framed for choreography |
-| Bounded-context map for DDD | `block` (`preset: ddd`) | Same engine; framed for context maps |
-| Security zones with trust boundaries | `block` (`preset: network`) | Same engine; supports `kind: forbidden` edges (red) |
-| Kubernetes-style namespaces with services inside | `cluster` | Has its own nested-box engine; supports `replicas` count |
+## The request diagram — number the steps, name the paths
 
-> Every `block` preset shares **one renderer** — presets differ only by the
-> colored tag pill above the diagram (ARCH / INFRA / EVENT / DDD / ZONES) and
-> the section eyebrow. Pick the preset that best signals intent to a reader;
-> the YAML grammar is identical. (The old type names `infra` / `event` / `ddd`
-> / `network` still work as permanent aliases.)
+A system-design diagram tells one request: the client resolves DNS, the load
+balancer picks a server, the server reads the cache, a miss goes to a replica.
+Draw it as a `block` and number the edges, so the prose can say "in step 4 the
+API reads the cache".
 
-**Quick mode — no coordinates.** Every architecture diagram can be written as
-just nodes + edges. Omit `col`/`row` on **all** nodes and the renderer computes a
-clean left-to-right layered layout from the edges. This is the default way to
-sketch a system fast.
+- `step: N` on an edge draws a circled numeral just before its label. Number
+  one request 1, 2, 3 in the order it happens. The terse form is
+  `- 4. api -> cache: GET link`.
+- Give a step only to the edges the prose walks. Replication, metrics and
+  cleanup edges carry no step.
+- When two requests share the diagram, give each edge `path: read` or
+  `path: write`. Each path draws in its own hue, its numerals too, and the
+  legend names it. Keep one count across both paths (read 1–5, write 6–9), so
+  each number appears once. Use no `path` when the diagram tells one request.
+- A hop that both requests take (browser to load balancer) is two edges, one
+  per path. The renderer stacks their labels.
+- An error edge stays red on any path.
+- Walk the steps by number in the prose: what happens, its latency, and what
+  fails there. A step with nothing to say joins a range ("steps 1–3 resolve and
+  route the request").
 
-Add explicit coordinates only when you want a deliberate
-shape — and always when you use `groups`. Zones are anchored to grid cells, so
-they need placed nodes. If *any* node has coordinates but others don't, the
-auto-layout replaces all of them — place all or none.
+The kind picks the silhouette. `db` is a cylinder, `replica` and `shards` are
+sets of cylinders, `cache` is a memory card, `queue`, `topic` and `stream` are
+pipes, `cdn` and `external` are clouds, `lb` and `gateway` are the bar, and
+`worker` is a card with a gear. Only `replicas: N` draws a pile of cards: use
+it for N copies of one server, never to mark a cache.
 
-**Edge labels — dense diagrams renumber themselves.** On every edge-bearing
-diagram (`block` — any preset, `flow`, `dfd`, `graph`,
-`swimlane`, `uml`, `cluster`, `felogic`), up to three labelled edges
-render as text pills riding the arrows. At **four or more labelled edges** the
-renderer switches to circled step numerals and moves the label
-text to a numbered legend under the diagram. (`state` is the one exception —
-its numerals point at the transition table's rows instead of a second legend.)
-You don't opt in or lay anything out. Just keep edge labels short (a verb
-phrase, a couple of words) so they read well as a pill or a legend entry.
+Lay the grid out left to right in five columns or fewer: clients, the edge
+(DNS, CDN, load balancer), the app servers, then the data stores. Put the
+queue and its workers under the app tier.
 
-**Node kinds** (block family; free strings — known ones get a colour + glyph):
-`client` · `service`/`microservice`/`compute`/`container` · `worker`/`etl` ·
-`db`/`store`/`database` · `bucket`/`blob` · `queue`/`mq`/`broker` · `stream` ·
-`cache` · `gateway`/`lb`/`proxy` · `function`/`lambda` · `cdn` · `dns` ·
-`waf`/`firewall`/`shield` · `auth`/`idp`/`iam`/`oauth`/`sso` ·
-`secrets`/`vault`/`kms` · `monitor`/`metrics`/`logs`/`tracing` ·
-`scheduler`/`cron`/`job` · `warehouse`/`lake` · `analytics`/`bi` ·
-`search`/`index` · `ml`/`model`/`llm`/`agent` · `vm`/`server`/`host` ·
-`user`/`person`/`browser`/`mobile` · `users`/`crowd` · `device`/`iot` ·
-`notification`/`webhook` · `email`/`sms` · `ci`/`cicd`/`pipeline` · `git`/`repo`
-· `registry` · `config` · `shard`/`sharded` · `replica`/`replicaset` ·
-`region`/`geo`/`globe` · `producer`/`topic`/`consumer` · `context` · `external`.
-**Vendor names work too**: `postgres`/`mysql`/`mongo`/`dynamo` → db, `s3` →
-bucket, `sqs`/`rabbitmq` → queue, `kafka`/`kinesis` → stream,
-`redis`/`memcached` → cache, `elasticsearch`/`opensearch` → search. Pick the
-closest kind — an unknown kind renders as a neutral box.
-
-**Kinds also pick the shape** (the canonical system-design silhouettes — you get
-the right one automatically by choosing the right kind):
-
-| Shape | Kinds |
-|---|---|
-| cylinder | `db` `database` `store` `postgres` `mysql` `mongo` `dynamo` |
-| tiered cylinder | `warehouse` `lake` |
-| pail (bucket) | `bucket` `blob` `object` `s3` |
-| **sharded trio** (3 small cylinders) | `shard` `shards` `sharded` |
-| **replica set** (stacked cylinders) | `replica` `replicas` `replicaset` |
-| horizontal cylinder (pipe) | `queue` `topic` `stream` `mq` `broker` `sqs` `rabbitmq` `kafka` `kinesis` |
-| cloud | `cdn` `external` |
-| hexagon | `gateway` `proxy` |
-| octagon | `lb` |
-| instance stack (receding cards) | `cache` `redis` `memcached` `worker` `etl` |
-| server rack (stacked slabs) | `vm` `server` `host` |
-| shield | `waf` `firewall` `shield` |
-| actor figure (boxless) | `user` `person` `actor` |
-| crowd (overlapping figures) | `users` `crowd` |
-| browser window | `browser` `web` |
-| phone frame | `mobile` |
-| circle with ƒ | `function` `lambda` |
-| calendar with clock badge | `scheduler` `cron` `job` |
-| padlock | `secrets` `vault` `kms` |
-| globe (boxless) | `region` `geo` `globe` |
-| clean rounded card + glyph | everything else |
-
-The same silhouettes apply inside `felogic` (db/store → cylinder,
-queue/bus/broker → pipe, cache → stack, external/backend/api → cloud), in `c4`
-(`kind: store` → cylinder), and in `cluster` (db services → cylinder). A
-database looks like a database in every diagram.
-
-**C4 extras.** Edges take `tech:` — rendered as `label [tech]`, the C4
-convention for the protocol. `boundaries[]` draws several named dashed boxes,
-each fitted around an explicit `nodes: [ids]` list (optional `color`) — so one
-diagram shows your platform and a partner's estate side by side. The single
-auto-fit `boundary:` still works for one system.
-
-**Mixing architecture views — one overview + one zoom.** Show the whole system
-once (`c4` context, or a `block` landscape), then zoom into the one or
-two places the doc is actually about. Zoom with `felogic` (or its `variant:
-be`) for a module's internals, a `preset: infra` `block` or `cluster` for
-deployment, and a `sequence` for the runtime of one path. Never redraw the same boxes in a
-second engine — pick one block per level of zoom and stitch them with prose
-("inside the `api` container: …").
+```block
+title: Short-link redirect — the read path
+nodes:
+  - { id: web, col: 1, row: 2, kind: browser, name: Browser }
+  - { id: dns, col: 1, row: 1, kind: dns, name: DNS, tech: Route 53 }
+  - { id: lb, col: 2, row: 2, kind: lb, name: Load balancer, tech: ALB }
+  - { id: api, col: 3, row: 2, kind: server, name: redirect-api, tech: Go, replicas: 4 }
+  - { id: cache, col: 4, row: 1, kind: cache, name: link cache, tech: Redis }
+  - { id: ro, col: 4, row: 3, kind: replica, name: links replicas, tech: Postgres }
+edges:
+  - 1. web -> dns: resolve sho.rt
+  - 2. web -> lb: GET /aB3x
+  - 3. lb -> api
+  - 4. api -> cache: GET link
+  - 5. api -> ro: on miss
+```

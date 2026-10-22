@@ -300,8 +300,16 @@ function lintLensRepeat(doc: Document, file: string): Diagnostic[] {
     // per route, like the endpoint card itself.
     if (seg.kind === 'sequence' && (apiCards >= 3 || data['endpoint'] !== undefined)) continue;
     // A chart kind, a block preset, or a variant is its own lens: a bar
-    // chart next to a pareto and a histogram repeats nothing.
-    const facet = data['kind'] ?? data['preset'] ?? data['variant'];
+    // chart next to a pareto and a histogram repeats nothing. So is a C4
+    // level, and a C4 dynamic view: the zoom from context to components
+    // is one story told at four levels.
+    const c4Lens =
+      seg.kind === 'c4'
+        ? Array.isArray(data['edges']) && data['edges'].some((e) => isPlainRecord(e) && e['step'] !== undefined)
+          ? 'dynamic'
+          : data['level']
+        : undefined;
+    const facet = data['kind'] ?? data['preset'] ?? data['variant'] ?? c4Lens;
     const key = typeof facet === 'string' ? `${seg.kind}:${facet}` : seg.kind;
     const n = (seen.get(key) ?? 0) + 1;
     seen.set(key, n);

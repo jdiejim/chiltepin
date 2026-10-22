@@ -28,7 +28,9 @@ describe('pkg', () => {
   it('renders the catalog template', () => {
     const html = renderDocument(parseDocument(BLOCK_TEMPLATES.pkg, 'pkg'));
     expect(html).toContain('Backend module layout');
-    expect(html).toContain('«import» ports only');
+    // The dependency label sits on its arrow, wrapped to two lines.
+    expect(html).toContain('>«import»</text>');
+    expect(html).toContain('>ports only</text>');
     expect(html).not.toContain('NaN');
   });
 
@@ -51,14 +53,22 @@ describe('pkg', () => {
     }
   });
 
-  it('prints members in mono, capped at five plus a "+n more" line', () => {
+  it('prints every member in mono up to twelve, then a "+n more" line that names the rest', () => {
     const root = parse(renderPkg(BACKEND));
     expect(root.querySelectorAll('[data-bl="packages.1.contains"] text').map((t) => t.text)).toEqual(['orders', 'payments', 'inventory']);
-    const many = renderPkg({
+    const seven = renderPkg({
       packages: [{ id: 'a', name: 'a', contains: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'] }],
     });
-    const lines = parse(many).querySelectorAll('[data-bl="packages.0.contains"] text').map((t) => t.text);
-    expect(lines).toEqual(['m1', 'm2', 'm3', 'm4', 'm5', '+2 more']);
+    const lines = parse(seven).querySelectorAll('[data-bl="packages.0.contains"] text').map((t) => t.text);
+    expect(lines).toEqual(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7']);
+    const fifteen = renderPkg({
+      packages: [{ id: 'a', name: 'a', contains: Array.from({ length: 15 }, (_, i) => `m${i + 1}`) }],
+    });
+    const texts = parse(fifteen).querySelectorAll('[data-bl="packages.0.contains"] text');
+    expect(texts).toHaveLength(13);
+    const more = texts[12];
+    expect(more?.querySelector('title')?.text).toBe('m13, m14, m15');
+    expect(more?.text.endsWith('+3 more')).toBe(true);
   });
 
   it('places packages on the grid: same row shares y, a lower row sits below', () => {

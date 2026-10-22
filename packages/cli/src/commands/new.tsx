@@ -109,9 +109,11 @@ export function NewPickerApp({ onPick }: PickerProps): React.JSX.Element {
   };
 
   if (section === DOCS_SECTION) {
-    const items = Object.keys(DOC_TEMPLATES).map((name) => {
+    const names = Object.keys(DOC_TEMPLATES);
+    const width = Math.max(...names.map((n) => (DOC_TEMPLATE_INFO[n]?.title ?? n).length)) + 1;
+    const items = names.map((name) => {
       const info = DOC_TEMPLATE_INFO[name];
-      return { label: `${(info?.title ?? name).padEnd(14)} ${info?.description ?? ''}`, value: name };
+      return { label: `${(info?.title ?? name).padEnd(width)} ${info?.description ?? ''}`, value: name };
     });
     return (
       <Box flexDirection="column">
@@ -123,8 +125,10 @@ export function NewPickerApp({ onPick }: PickerProps): React.JSX.Element {
     );
   }
 
-  const items = familyBlocks(section).map((t) => ({
-    label: `${t.padEnd(13)} ${BLOCK_DESCRIPTIONS[t]}`,
+  const blocks = familyBlocks(section);
+  const width = Math.max(...blocks.map((t) => t.length)) + 1;
+  const items = blocks.map((t) => ({
+    label: `${t.padEnd(width)} ${BLOCK_DESCRIPTIONS[t]}`,
     value: t as string,
   }));
   return (

@@ -1,30 +1,58 @@
 # Intake checklists — what to ask before writing
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, one folder up). Use
-this in move 1 (*Understand the ask — and ask back*) of every new document.
+this in step 1 (GROUND) of the loop, for every new document.
+
+## The reader first
+
+Every inventory starts with three facts: who reads the doc, at what moment,
+and what they decide or do next. The reader sets the first block.
+
+| Reader | Their moment | Lead with |
+|---|---|---|
+| Executive or sponsor | a decision meeting | the answer, its cost, and the risk |
+| On-call engineer | an alert at 3 am | symptom → action, then the escalation |
+| Engineer who changes the system | a design review or a first change | the mechanism, then where it breaks |
+| Integrator | writing the client code | the endpoint, the payload, the error codes |
+| New joiner | week one | who to ask, the one path they will touch, the words |
+
+When the request names no reader, pick the one whose next action the
+request implies, and say so in one clause of the opening.
+
+## Limits
+
+For each limit the request names (80 ms, 3 repairs, 15 min, $400), find
+two facts: what happens when it is hit, and who chose it. Draw the first as
+an edge or a step. State the second in the sentence. When the request does
+not say, the limit is an open question with an owner: put it in the closing
+`faq` or `statustable`, not in a caveat.
 
 ## The ask-back protocol
 
-1. **Identify the document type.** Match the ask to a checklist below (they
-   mirror the *Document playbooks* table in `SKILL.md`). No match → fall back to
-   the four generic questions: reader & moment · job · scope · form.
-2. **Collect the checklist and diff it against the ask.** Note which items the
-   user already answered — never ask for something they told you.
+1. **Identify the document type.** Match the ask to a checklist below. No
+   match → fall back to the four generic questions: reader and moment · job ·
+   scope · form.
+2. **Diff the checklist against the ask and the files.** Note which items
+   the user or the files already answer — never ask for something you have.
 3. **Ask everything at once.** Ask for every missing **CRITICAL** item in ONE
    batched message of 2-6 pointed questions — never drip one question per turn.
    Fold in a nice-to-have only when its answer would change the outline.
-4. **If the user is unavailable** (or the gaps are minor), proceed with explicit
-   assumptions. Add a `callout` (`tone: note`, title *Assumptions*) near the top
-   of the doc, listing each guess so every one is visible and correctable.
+4. **If the user is unavailable** (or the gaps are minor), proceed. Mark
+   each invented value once, where the reader acts on it: in the block's
+   `note`, or one inline "(assumed)". When most specifics are invented, say
+   so once in the opening and set `meta.status: example`. Each missing fact
+   the reader needs becomes an open question with an owner in the last
+   section. Never collect caveats in a closing list, and never open with an
+   assumptions `callout`.
+5. **Leave out what you cannot ground.** A block with no fact behind it —
+   an invented transcript, prompt, metric, or owner — is slop. Drop the
+   block, or ask for the fact.
 
 Each checklist marks items **CRITICAL** (the document is wrong without them)
 vs *nice-to-have* (improves it, but safely assumable).
 
-> **Raw tabular data?** When the source material is a spreadsheet/CSV export,
-> don't hand-transcribe it into YAML — import it. `chiltepin sync csv <file>` prints
-> a ready-made `table` / `statustable` / `chart` fence (it auto-picks the
-> block and says why), and dropping the `.csv` onto the studio canvas inserts
-> the block in place. Ask for the export, not a screenshot of it.
+Raw tabular data? Ask for the export, never a screenshot, and import it
+with `chiltepin sync csv <file>`.
 
 ## API / endpoint spec
 
@@ -116,25 +144,14 @@ vs *nice-to-have* (improves it, but safely assumable).
 
 ## Reviewing an existing doc
 
-When asked to review (not write) a doc, walk this checklist top to bottom and
-report findings per item — worst first. Fix only what you were asked to fix.
+When asked to review (not write) a doc, run `chiltepin review <file>`, then
+walk step 6 of the loop in `SKILL.md` as the reader. Report findings worst
+first, and quote each diagnostic and each `review` line verbatim. Also flag:
 
-1. **Skim test.** Read only the `meta` title and the `##` headings: do they
-   tell one story (orient → big picture → detail → plan)? Headings that could
-   sit on any document mean it was templated.
-2. **One lens per beat.** No two blocks drawing the same boxes; no three
-   tables in a row where one wants to be a `matrix`, `list`, or diagram.
-3. **Thin blocks.** A block with fewer than ~3 rows/nodes should fold into
-   prose or a `callout`. An empty block is a `W_EMPTY_BLOCK` waiting to fire.
-4. **YAML pitfalls scan.** Unquoted `,` `:` `#` in `desc`/`note`/`summary`
-   fields, unquoted hex colors, unquoted `1:N` cardinality, numeric-looking
-   strings (`version: 1.0`, `delta: 0`) — the usual parse traps.
-5. **Refs.** Every `ref:` points at an id that exists; same-doc refs use bare
-   `#id`; blocks other docs might need carry an `id:`.
-6. **Title/heading agreement.** Each block's `title` and its `##` heading
-   sound like one author; the `meta` cover matches the doc's actual content.
-7. **Stale facts.** Counts, versions, dates, and status fields
-   (`timeline`/`statustable`/`inventory`) that no longer match reality — flag
-   them even when you can't verify the correction.
-8. **Close with `chiltepin check`.** A review isn't done until the doc validates
-   clean — report any diagnostic verbatim.
+- Two blocks that draw the same boxes, or three tables in a row where one
+  wants to be a `matrix`, `list`, or diagram.
+- A block with fewer than ~3 rows or nodes: fold it into prose.
+- Stale counts, versions, dates, and statuses (`timeline`, `statustable`,
+  `inventory`), even when you cannot verify the correction.
+
+Fix only what you were asked to fix.

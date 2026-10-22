@@ -1,8 +1,8 @@
 # Chiltepin blocks — Design system & UI mockups
 
 Part of the **chiltepin** skill (the hub is `SKILL.md`, two folders up).
-Run `chiltepin block <type>` for the fields and an example; block → family map:
-`INDEX.md`. Schemas reject unknown fields.
+Run `chiltepin block <type>` for the fields and an example; `chiltepin block`
+lists every block by family. Schemas reject unknown fields.
 
 **Shape**: Structure & emphasis — token specimens, usage rules, and low-fi
 screens (`palette`, `typescale`, `dodont`, `inventory`, `wireframe`).

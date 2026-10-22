@@ -29,11 +29,19 @@
  * `deactivate` (a bar opens on `to`, closes on `from`); otherwise inferred —
  * a bar opens on each incoming sync/async message and closes at the next
  * response/error back to the caller (or the actor's last outgoing message).
+ * An inferred bar opened inside a fragment branch closes when that branch
+ * ends (`else` / `end`), and a bar that nothing extends (a call with no reply
+ * and no later message from the callee) is not drawn — an empty box says
+ * nothing. Nesting depth counts only the bars actually drawn.
+ *
+ * Numbering counts messages only: a note is never numbered. Actor heads grow
+ * to fit their name and subtitle (both wrap; nothing is cut), and frame tabs
+ * paint above the activation bars.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
 import { escapeHtml } from '../escape.js';
-import { wrapText } from '../svg/wrapText.js';
+import { wrapAll } from './wrapAll.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { revealAttr } from '../svg/reveal.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
@@ -64,12 +72,18 @@ const ROW_ELSE = 24;
 const ROW_END = 14;
 const NOTE_LINE = 13;
 const NOTE_CHARS = 34;
-const NOTE_LINES = 3;
 const FRAME_PAD = 18;
 const FRAME_INSET = 12;
 const BAR_PAD = 6;
 /** Approximate advance of one 9.5px mono glyph — for extents, never layout. */
 const CHAR_W = 6;
+/** Actor head rhythm: a 13px name line, a 10px mono subtitle line, the pad, and the band an `EXT` chip takes. */
+const NAME_LINE = 14;
+const SUB_LINE = 12;
+const HEAD_PAD = 6;
+const CHIP_BAND = 13;
+/** Subtitle characters per line inside the 150px head (10px mono). */
+const SUB_CHARS = 22;
 /** Lane geometry: lane width, the minimum gap, and what a label needs beyond its glyphs (badge + margins). */
 const LANE_W = 150;
 const GAP_MIN = 46;
@@ -105,7 +119,7 @@ interface MsgRow {
   readonly kind: 'msg';
   /** Index in `messages` (the data path). */
   readonly idx: number;
-  /** Diagram number — counts messages only, never frame markers. */
+  /** Diagram number — counts messages only, never frame markers or notes (a note is 0). */
   readonly n: number;
   readonly top: number;
   /** The message line's y (a note's box bottom). */
@@ -149,7 +163,8 @@ interface Frame {
 interface Bar {
   readonly i: number;
   readonly y1: number;
-  readonly depth: number;
+  /** Creation order (a bar opened inside a fragment branch has a higher one). */
+  readonly seq: number;
   y2: number;
   /** Auto mode: who called, and the actor's last outgoing row so far. */
   readonly caller: number;
@@ -240,9 +255,11 @@ function renderStepList(
       r.code !== undefined && r.code.length > 0 ? `<pre class="sql">${escapeHtml(r.code)}</pre>` : '';
     const note =
       r.note !== undefined && r.note.length > 0 ? `<span class="step-note">${escapeHtml(r.note)}</span>` : '';
+    // A note is not a message: its marker is the note glyph, never a number.
+    const stepN = r.msgKind === 'note' ? `<span class="step-n note">i</span>` : `<span class="step-n">${r.n}</span>`;
     lis.push(
       `<li${errCls}${bp(`messages.${r.idx}`)}${rv(r.idx)}>` +
-        `<span class="step-n">${r.n}</span>` +
+        stepN +
         `<span class="step-actor${actorErrCls}">${actorLabel}</span>` +
         `<span class="step-summary">${escapeHtml(r.summary)}</span>` +
         code +
@@ -293,17 +310,19 @@ function layoutRows(items: readonly SeqItem[], idx: (id: string) => number, star
       return;
     }
     const msg = m as Extract<SeqItem, { from: string }>;
-    n += 1;
     // Unknown kinds (invalid per schema, but render is lenient) fall back to
     // the default `sync` style instead of crashing on a missing KIND entry.
     const msgKind: MsgKind = msg.kind !== undefined && msg.kind in KIND ? (msg.kind as MsgKind) : 'sync';
+    // Notes are not messages: they never take (or skip) a number.
+    if (msgKind !== 'note') n += 1;
     const label = msg.label ?? '';
-    const lines = msgKind === 'note' ? wrapText(label, NOTE_CHARS, NOTE_LINES) : [];
+    // A note wraps to as many lines as it needs; its row grows with it.
+    const lines = msgKind === 'note' ? wrapAll(label, NOTE_CHARS) : [];
     const h = msgKind === 'note' ? ROW_MSG + NOTE_LINE * Math.max(0, lines.length - 1) : ROW_MSG;
     const row: MsgRow = {
       kind: 'msg',
       idx: k,
-      n,
+      n: msgKind === 'note' ? 0 : n,
       top: cursor,
       y: cursor + h,
       fromI: idx(msg.from),
@@ -372,12 +391,15 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
   const laneW = LANE_W;
   const gaps = laneGaps(actors, messages);
   const headY = 16;
-  // Long actor names wrap (≤2 lines) inside the head instead of clipping at
-  // its edges; every head grows together when any name wraps. An external
-  // actor's `EXT` chip takes the top-left corner, so its name wraps sooner.
-  const nameLines = actors.map((a) => wrapText(a.name, a.external === true ? 16 : 19, 2));
-  const headWrapped = nameLines.some((ls) => ls.length > 1);
-  const headH = headWrapped ? 54 : 40;
+  // Long actor names and subtitles wrap inside the head instead of running
+  // past its edges; every head grows together to the tallest. An external
+  // actor's `EXT` chip takes the top-left corner: its content starts under it.
+  const nameLines = actors.map((a) => wrapAll(a.name, a.external === true ? 16 : 19));
+  const subLines = actors.map((a) => (a.sub !== undefined ? wrapAll(a.sub, SUB_CHARS) : []));
+  const contentH = (i: number): number =>
+    (nameLines[i]?.length ?? 1) * NAME_LINE + ((subLines[i]?.length ?? 0) > 0 ? 2 + (subLines[i]?.length ?? 0) * SUB_LINE : 0);
+  const headTopPad = (i: number): number => (actors[i]?.external === true ? CHIP_BAND : HEAD_PAD);
+  const headH = Math.max(40, ...actors.map((_, i) => headTopPad(i) + contentH(i) + HEAD_PAD));
   const laneX: number[] = [];
   for (let i = 0; i < N; i++) laneX.push(leftPad + laneW / 2 + i * laneW + gaps.slice(0, i).reduce((a, g) => a + g, 0));
   const cx = (i: number): number => laneX[i] ?? leftPad + laneW / 2;
@@ -468,11 +490,38 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
   };
   const openBar = (i: number, y: number, caller: number, step: number): void => {
     const list = openOn(i);
-    const bar: Bar = { i, y1: y, y2: Number.NaN, depth: list.length, caller, last: y, step };
+    const bar: Bar = { i, y1: y, y2: Number.NaN, seq: bars.length, caller, last: y, step };
     list.push(bar);
     bars.push(bar);
   };
-  for (const r of msgRows) {
+  // Auto mode: the `seq` each open fragment branch started at. A bar opened
+  // inside a branch closes when the branch ends — the next branch is an
+  // alternative, not a continuation.
+  const branchFrom: number[] = [];
+  const closeBranch = (from: number): void => {
+    for (const list of open.values()) {
+      for (let k = list.length - 1; k >= 0; k--) {
+        const b = list[k] as Bar;
+        if (b.seq < from) continue;
+        b.y2 = b.last;
+        list.splice(k, 1);
+      }
+    }
+  };
+  for (const r of rows) {
+    if (r.kind !== 'msg') {
+      if (explicit) continue;
+      if (r.kind === 'open') {
+        branchFrom.push(bars.length);
+        continue;
+      }
+      const from = branchFrom[branchFrom.length - 1];
+      if (from === undefined) continue;
+      closeBranch(from);
+      if (r.kind === 'else') branchFrom[branchFrom.length - 1] = bars.length;
+      else branchFrom.pop();
+      continue;
+    }
     if (explicit) {
       if (r.activate && r.toI >= 0) openBar(r.toI, r.y, r.fromI, steps.get(r.idx) ?? 0);
       if (r.deactivate && r.fromI >= 0) {
@@ -502,6 +551,13 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
   for (const list of open.values()) {
     for (const b of list) b.y2 = explicit ? cursor : b.last;
   }
+  // An inferred bar nothing extended (no reply, no later message from the
+  // callee) is an empty box: drop it. Depth then counts the drawn bars that
+  // are still active on the same lifeline when a bar opens.
+  const drawn = bars.filter((b) => explicit || b.y2 > b.y1);
+  const depthOf = new Map<Bar, number>(
+    drawn.map((b) => [b, drawn.filter((o) => o !== b && o.i === b.i && o.seq < b.seq && o.y1 <= b.y1 && o.y2 > b.y1).length]),
+  );
 
   // The accessible name, built from the data: what the diagram is about and
   // how big it is (`msgRows` counts messages only, never frame markers).
@@ -569,10 +625,10 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
     s += `<line x1="${x}" y1="${headY + headH}" x2="${x}" y2="${bottom}" class="lifeline"/>`;
   }
 
-  for (const b of bars) {
+  for (const b of drawn) {
     const y1 = b.y1 - BAR_PAD;
     const y2 = b.y2 + BAR_PAD;
-    s += `<rect x="${cx(b.i) - 3 + b.depth * 4}" y="${y1}" width="6" height="${Math.max(0, y2 - y1)}" class="activation"${revealAttr(b.step)}/>`;
+    s += `<rect x="${cx(b.i) - 3 + (depthOf.get(b) ?? 0) * 4}" y="${y1}" width="6" height="${Math.max(0, y2 - y1)}" class="activation"${revealAttr(b.step)}/>`;
   }
 
   s += `<g${bl('actors')}>`;
@@ -580,23 +636,25 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
     const ext = a.external === true;
     const extCls = ext ? ' ext' : '';
     const ls = nameLines[i] ?? [];
-    const hasSub = a.sub !== undefined;
+    const subs = subLines[i] ?? [];
     // Vertical rhythm inside the head: an `EXT` chip (external actors) takes
-    // the top band, the name sits under it, the subtitle at the bottom.
-    const nameY = ls.length > 1 ? headY + (ext ? 21 : 17) : hasSub ? headY + (ext ? 22 : 17) : headY + (ext ? 25 : 24);
-    const subY = headY + (headWrapped ? 47 : 33);
+    // the top band, then the name lines and the subtitle lines, centred in
+    // the room left (every head shares the tallest head's height).
+    const top = headY + headTopPad(i) + Math.max(0, (headH - headTopPad(i) - HEAD_PAD - contentH(i)) / 2);
+    const nameY = Math.round((top + 11) * 10) / 10;
+    const subY = Math.round((top + ls.length * NAME_LINE + 2 + 9) * 10) / 10;
     const name =
       ls.length <= 1
         ? `<text x="${cx(i)}" y="${nameY}" class="lane-head-text t-name">${escapeHtml(a.name)}</text>`
         : ls
             .map(
               (ln, j) =>
-                `<text x="${cx(i)}" y="${nameY + j * 14}" class="lane-head-text t-name">${escapeHtml(ln)}</text>`,
+                `<text x="${cx(i)}" y="${nameY + j * NAME_LINE}" class="lane-head-text t-name">${escapeHtml(ln)}</text>`,
             )
             .join('');
-    const sub = hasSub
-      ? `<text x="${cx(i)}" y="${subY}" class="lane-head-sub t-sub">${escapeHtml(a.sub ?? '')}</text>`
-      : '';
+    const sub = subs
+      .map((ln, j) => `<text x="${cx(i)}" y="${subY + j * SUB_LINE}" class="lane-head-sub t-sub">${escapeHtml(ln)}</text>`)
+      .join('');
     const chip = ext ? `<text x="${cx(i) - laneW / 2 + 8}" y="${headY + 11}" class="lane-head-chip t-eyebrow">EXT</text>` : '';
     s +=
       `<g${bp(`actors.${i}`)}>` +
@@ -621,9 +679,10 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
     used[r.msgKind] = true;
     const rowBp = bp(`messages.${r.idx}`) + rv(r.idx);
     const errCls = r.msgKind === 'error' ? ' err' : '';
+    // A note is not numbered: its badge (when the step list lists it) shows `i`.
     const badge = (x: number, y: number): string =>
-      `<circle cx="${x}" cy="${y}" r="8" class="step-badge${errCls}"/>` +
-      `<text x="${x}" y="${y + 3}" class="step-badge-text t-badge${errCls === '' ? '' : ' c-negative'}">${r.n}</text>`;
+      `<circle cx="${x}" cy="${y}" r="8" class="step-badge${errCls}${r.msgKind === 'note' ? ' note' : ''}"/>` +
+      `<text x="${x}" y="${y + 3}" class="step-badge-text t-badge${errCls === '' ? '' : ' c-negative'}">${r.msgKind === 'note' ? 'i' : r.n}</text>`;
 
     // `note` kind — a note box beside one lifeline or over two.
     if (r.msgKind === 'note') {
@@ -703,7 +762,7 @@ export function renderSequence(data: BlockDataMap['sequence']): string {
   if (accentIdx >= 0) items.push({ swatch: 'edge-accent-dashed', label: 'the answer the caller gets' });
   if (actors.some((a) => a.external === true)) items.push({ swatch: 'chip', chip: 'EXT', label: 'external actor' });
   if (frames.length > 0) items.push({ swatch: 'node-fill2', label: 'fragment (alt / opt / loop)' });
-  if (bars.length > 0) items.push({ swatch: 'node', label: 'active' });
+  if (drawn.length > 0) items.push({ swatch: 'node', label: 'active' });
   const legend = renderLegend(items);
 
   // Eyebrow: `SEQUENCE · POST /oauth/token`; the method word takes the accent.

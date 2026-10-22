@@ -3,13 +3,16 @@
  * value against its budget. Every row shares one budget mark: the dashed rule
  * at 70% of the track is "the budget", and each bar is measured ÷ budget of
  * that length, so a bar that crosses the rule is over budget whatever its
- * unit. The value prints at the bar end; the budget under the metric name.
+ * unit. A bar too long for the track is cut at its end, with break marks and
+ * the true ratio (`5×`) printed at the break. The value prints after the
+ * track; the budget under the metric name.
  *
- * Status derives per row (`lowerIsBetter` defaults to true): over — measured
- * beyond the budget on the bad side; near — within 10% of the budget; ok —
- * everything else. Over rows take `negative`; near rows take the accent (the
- * author's numbers put them there — strip the near values and the accent
- * goes to zero); ok rows are `muted`. The footer counts the three.
+ * Status derives per row (`lowerIsBetter` defaults to true): a miss — beyond
+ * the budget on the bad side; near — within 10% of the budget; ok —
+ * everything else. A miss reads "over" when lower is better and "below"
+ * (under the target) when higher is better. Misses take `negative`; near rows
+ * take `hue-amber` (a warning, not an error); ok rows are `muted`. The footer
+ * counts each.
  */
 
 import type { BlockDataMap } from 'chiltepin-core';
@@ -18,6 +21,7 @@ import { bl, bp } from '../paths.js';
 import { DECORATIVE } from '../svg/decorative.js';
 import { renderLegend, type LegendItem } from '../svg/legend.js';
 import { countPhrase, svgName } from '../svg/svgTitle.js';
+import { groupNum } from './chartScale.js';
 import { diagramFrame } from './frame.js';
 
 type PerfData = BlockDataMap['perfbudget'];
@@ -45,11 +49,15 @@ export function perfStatus(m: Metric): PerfStatus {
   return 'ok';
 }
 
-/** Compact number: integers as-is, else up to two decimals with trailing zeros cut. */
+/** A grouped number: `2140` → `2,140`, `0.04` → `0.04`, a true minus sign. */
 function fmtNum(v: number): string {
-  if (!Number.isFinite(v)) return String(v);
-  if (Number.isInteger(v)) return String(v);
-  return String(Math.round(v * 100) / 100);
+  return groupNum(v);
+}
+
+/** The ratio printed at the break of a cut bar: `5×`, `12.5×`. */
+function ratioText(r: number): string {
+  if (!Number.isFinite(r)) return '∞×';
+  return `${r >= 10 ? Math.round(r) : Math.round(r * 10) / 10}×`;
 }
 
 function valueText(v: number, unit: string | undefined): string {
@@ -58,12 +66,18 @@ function valueText(v: number, unit: string | undefined): string {
 
 const BAR_FILL: Record<PerfStatus, string> = {
   over: 'var(--negative)',
-  near: 'var(--accent)',
+  near: 'var(--hue-amber)',
   ok: 'var(--muted)',
 };
-const CHIP_CLASS: Record<PerfStatus, string> = { over: ' c-negative', near: ' c-accent', ok: ' c-muted' };
-// The near chip keeps a `rule-solid` outline: the accent on that row is its bar (one mark), the chip text only echoes it.
-const CHIP_STROKE: Record<PerfStatus, string> = { over: 'var(--negative)', near: 'var(--rule-solid)', ok: 'var(--rule-solid)' };
+const CHIP_CLASS: Record<PerfStatus, string> = { over: ' c-negative', near: ' c-amber', ok: ' c-muted' };
+const CHIP_STROKE: Record<PerfStatus, string> = { over: 'var(--negative)', near: 'var(--hue-amber)', ok: 'var(--rule-solid)' };
+const CHIP_FILL: Record<PerfStatus, string> = { over: 'var(--paper)', near: 'var(--hue-amber-tint)', ok: 'var(--paper)' };
+
+/** The chip word: a miss is "over" a ceiling, or "below" a floor (higher is better). */
+function chipWord(st: PerfStatus, m: Metric): string {
+  if (st !== 'over') return st;
+  return m.lowerIsBetter === false ? 'below' : 'over';
+}
 
 export function renderPerfbudget(data: PerfData): string {
   const metrics = data.metrics;
@@ -123,28 +137,36 @@ export function renderPerfbudget(data: PerfData): string {
       `<text x="${padL}" y="${cy + 11}" class="t-sub c-soft"${bp(`metrics.${i}.budget`)}>${escapeHtml(subs[i] ?? '')}</text>` +
       `<rect x="${trackX}" y="${cy - BAR_H / 2}" width="${TRACK_W}" height="${BAR_H}" rx="2" fill="var(--paper-2)" stroke="var(--rule)" stroke-width="1"${DECORATIVE}/>` +
       `<rect x="${trackX}" y="${cy - BAR_H / 2}" width="${barW}" height="${BAR_H}" rx="2" fill="${fill}"${bp(`metrics.${i}.measured`)}/>` +
-      // A bar past the track is cut: a small break mark says the value is off the scale.
-      (clipped ? `<path d="M${barEnd - 6} ${cy - BAR_H / 2 - 2} l -4 ${BAR_H + 4} M${barEnd - 2} ${cy - BAR_H / 2 - 2} l -4 ${BAR_H + 4}" stroke="var(--paper)" stroke-width="2" fill="none"/>` : '') +
+      // A bar past the track is cut: break marks say the value is off the
+      // scale, and the true ratio to the budget prints at the break.
+      (clipped
+        ? `<path d="M${barEnd - 6} ${cy - BAR_H / 2 - 2} l -4 ${BAR_H + 4} M${barEnd - 2} ${cy - BAR_H / 2 - 2} l -4 ${BAR_H + 4}" stroke="var(--paper)" stroke-width="2" fill="none"/>` +
+          `<text x="${barEnd - 14}" y="${cy + 3.5}" class="t-sub pb-ratio" text-anchor="end" style="fill:var(--paper);stroke:none">${escapeHtml(ratioText(ratio))}</text>`
+        : '') +
       `<text x="${valueX}" y="${cy + 3.5}" class="t-sub c-ink pb-val">${escapeHtml(value)}</text>` +
-      `<rect x="${chipX}" y="${cy - 7}" width="${chipW}" height="14" rx="2" fill="var(--paper)" stroke="${CHIP_STROKE[st]}" stroke-width="1"/>` +
-      `<text x="${chipX + chipW / 2}" y="${cy + 3}" class="t-eyebrow${CHIP_CLASS[st]}" text-anchor="middle">${st}</text>` +
+      `<rect x="${chipX}" y="${cy - 7}" width="${chipW}" height="14" rx="2" fill="${CHIP_FILL[st]}" stroke="${CHIP_STROKE[st]}" stroke-width="1"/>` +
+      `<text x="${chipX + chipW / 2}" y="${cy + 3}" class="t-eyebrow${CHIP_CLASS[st]}" text-anchor="middle">${chipWord(st, m)}</text>` +
       `</g>`;
   });
   s += `</g></svg>`;
 
   const count = (k: PerfStatus): number => statuses.filter((x) => x === k).length;
-  const nOver = count('over');
+  const missWord = metrics.map((m, i) => chipWord(statuses[i] ?? 'ok', m));
+  const nOver = missWord.filter((w) => w === 'over').length;
+  const nBelow = missWord.filter((w) => w === 'below').length;
   const nNear = count('near');
   const nOk = count('ok');
   const items: LegendItem[] = [];
   if (nOver > 0) items.push({ swatch: 'fill', fill: 'var(--negative)', label: 'over budget' });
-  if (nNear > 0) items.push({ swatch: 'fill', fill: 'var(--accent)', label: 'near — within 10%' });
+  if (nBelow > 0) items.push({ swatch: 'fill', fill: 'var(--negative)', label: 'below target (higher is better)' });
+  if (nNear > 0) items.push({ swatch: 'fill', fill: 'var(--hue-amber)', label: 'near — within 10%' });
   if (nOk > 0) items.push({ swatch: 'fill', fill: 'var(--muted)', label: 'within budget' });
   items.push({ swatch: 'line-dashed', stroke: 'var(--ink)', label: 'budget' });
   const legend = renderLegend(items);
   const foot =
     `<div class="diagram-foot pb-foot">` +
-    `<span><strong>${nOver}</strong> over</span>` +
+    (nOver > 0 || nBelow === 0 ? `<span><strong>${nOver}</strong> over</span>` : '') +
+    (nBelow > 0 ? `<span><strong>${nBelow}</strong> below</span>` : '') +
     `<span><strong>${nNear}</strong> near</span>` +
     `<span><strong>${nOk}</strong> ok</span>` +
     `</div>`;
