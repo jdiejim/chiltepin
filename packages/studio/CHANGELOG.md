@@ -1,5 +1,155 @@
 # chiltepin-studio
 
+## 0.16.7
+
+### Patch Changes
+
+- 7617741: `c4` draws the C4 notation. Each element shows its name, a bracketed type line in its category hue (`[Container: Go, gRPC]`) and a description that wraps in full. A person is a head over shoulders, a database a cylinder, a queue a pipe, a web front end a browser window, and a mobile app a phone. Elements outside the scope are neutral and dashed.
+
+  Each relationship label states the intent, with the technology in brackets on its own line. A boundary is a dashed, rounded panel that names its scope and its type (`[Software System]`, `[Container]`, `[Enterprise]`), and its label moves to a stretch that no arrow crosses. The key lists exactly the notation a diagram uses. The eyebrow names the diagram type and its scope (`Container diagram · Payments`); `level` is optional, because the deepest element kind sets it.
+
+  Auto-layout now reads from the people down. People take the top row, each element sits one row below the nearest element that calls it, the boundary keeps its members in one block of cells, and elements outside the boundary line its sides.
+
+  New optional edge field `step`: numbered relationships make a C4 dynamic view, drawn with the circled step numeral. `W_LENS_REPEAT` counts each C4 level and the dynamic view as separate lenses, so a doc can zoom from context to components without a warning. The skill's `c4` entry is shorter and links the new `reference/c4.md`, and `docs/examples/c4-model.md` shows one system at every level.
+
+- 7617741: Diagrams get colour by category. Six hue tokens (`--hue-blue`, `-green`, `-amber`, `-violet`, `-teal`, `-rose`, each with an opaque `-tint`) say what kind of thing a node is: compute is blue, network and security green, state amber, messaging teal, AI violet, people rose. The renderer picks the hue from the node `kind`: the chip and glyph take the hue and the fill takes its tint. The one accent still marks the focal answer. Group panels and `block` layers take a hue too: `color: teal` names one, and without `color` a panel takes the family most of its nodes share, else the next free hue. A nested group repeats its outermost group's hue. Legends show each kind's chip in its hue. `c4` elements follow the same families.
+
+  The AI kit is now part of the box chart. `block` (every preset) draws `agent`, `llm` (`model`), `tool`, `memory`, `vector` (`embeddings`), `human` (`reviewer`), `guard` (`guardrail`, `policy`), `eval` (`judge`, `grader`) and `prompt`, each with its own chip, glyph and hue; `agent` and `llm` draw `tech` as the model chip. `flow` adds the node kinds `guard` and `eval` (additive schema change) and colours every AI kind by family.
+
+  `chiltepin block <type>` prints a new "Field notes" section from the schema's `.describe()` notes: the block node `kind` vocabulary (with the AI kit) and the hue names for group and layer `color`.
+
+- 7617741: Charts show the true numbers. A negative value in a `bar`, `line`, `area`, `stacked`, `scatter` or `radar` chart is drawn below a zero line, and a negative waterfall step goes down, so a bridge totals the signed sum. Only the part-of-whole kinds clamp a negative part, and they still print the true value; a gauge or bullet past its scale prints its real number.
+
+  One number format serves every numeric block. Ticks share one suffix per axis (`0 · 2M · 4M`), value labels are compact (`1.25M`, `−340k`), exact values are grouped (`2,055,000`), and a byte unit scales (`3.2 GB`).
+
+  Chart axes size to their labels. The y gutter is as wide as the widest tick label. Category labels wrap to two lines, thin out on a line chart, or turn, and a `bar` chart with more than ten categories or long labels draws horizontal bars. A value label wider than its bar is dropped.
+
+  A `funnel` band is truly proportional, and a label that does not fit its band sits beside it. Each stage also prints its share of the first stage.
+
+  Series take the six category hues. Past six series, a line adds a dash and a marker shape and a bar draws hollow. A donut folds slices past six into one "Other". `mindmap` branches take the hue they name, and each branch now gets its own tone.
+
+  `okr` prints the true progress (`135%`) and draws a target tick past 100%; every track in a card has the same length. `at risk` is amber.
+
+  `bintree` lays nodes out in key order, so no two nodes overlap, and sizes every node from the widest value.
+
+  `percentiles` turns its axis log when one tail is over 30 times the smallest median, and labels it. On a linear axis a far tail ends in an arrow with its true value. Dots that would overlap move off the line.
+
+  `stats` items take a new `better: up | down` field. The arrow comes from the sign of the delta; the colour comes from `better`. Without `better`, the delta stays neutral, so a latency drop is never red.
+
+  `perfbudget` says "below" for a missed floor, prints the true ratio (`5×`) on a cut bar, and shows a near row in amber.
+
+  `sankey` ribbons are translucent tints of their source hue, and ribbon values never sit on a stage label or bar. `pyramid` uses one hue ramp in the diagram frame and wraps its `desc`. `roadmap` columns fit the page (at least 56px), months group under quarters past eight periods, the now line sits under the chips, and a short chip's label runs on beside it. `storymap` columns flex to the page width. `chevrons` take their width and text budget from the page. `heatmap` uses quartile steps when one outlier would flatten the rest.
+
+  These renderers measure text with the shared pixel estimate (`fitText`, `ellipsize`). A label grows a box or wraps first. A label that must still be cut ends with "…", keeps the whole text in its tooltip, and is reported as a cut with its data path.
+
+- 7617741: Edges in grid diagrams are now routed around the nodes and every label sits on its own edge. A shared obstacle-aware router (`flow`, `block` grid and layered, `c4`, `dfd`, `state`, `felogic`, `graph`, `cluster`, `pkg`, `swimlane`, `threatmodel`) never draws a line through a node, spreads the edges that share a side, keeps parallel runs a track apart, loops a back edge around its row, and moves a line off another edge's label. A label wraps to two lines at most; the column or row gap grows (one gap per grid) to fit it, and a circled numeral with a legend entry is only the last resort for a label with no clear place. `uml` and `usecase` keep their own lines but put their labels on them too. Auto-layout keeps dagre's alignment: a straight chain stays on one row, a parent sits level with the middle of the children it fans out to, and back edges no longer move ranks. New export `geometryReport(type, data)`; `chiltepin check` reports what a layout could not avoid (two nodes in one cell, an edge through a node, a label with no clear place, many crossings) as the new `W_GEOMETRY` warning, with a fix in the block's data.
+- 7617741: `chart` gets `kind: dumbbell`. It draws one row per label and one dot per series on a shared value axis, with a connector from the lowest dot to the highest. The first series is a neutral dot, the last series is the accent, and a series between them takes a category hue. At the right, each row prints "first → last" and a signed change (`+1.5`, `−0.4`), so a row that falls reads as clearly as a row that rises.
+
+  `chart` gets the optional `min` field, the floor of the dumbbell value axis. With `max`, it sets a fixed scale such as 1–5. Without them, the axis comes from the data and includes 0 only when the data is near 0. A value past `min` or `max` stays on the axis end with a chevron and prints its true value. Long row labels wrap, and dots that touch move apart above and below the track. The drawing aims at a width that fits a 400 px phone with no sideways scroll.
+
+  The skill routes two values per row on one scale to the dumbbell `chart`, and keeps `slopegraph` for changes in rank order. The showcase and `chiltepin demo` show a dumbbell example.
+
+- 7617741: `flow` never trims a node label: the cell width grows (one width per grid) until the longest name, sublabel, or decision text fits, and the agent card no longer cuts a two-word name to its first word. Auto-laid-out `flow`, `block` (grid), `c4`, `dfd`, and `state` diagrams with no `dir` switch to top-to-bottom when the left-to-right drawing would be wider than the 1600-unit stage (where a drawing starts to scroll) and top-to-bottom is narrower, so a long chain fits the page instead of hiding its right side. New command `chiltepin shots <file>` writes one PNG per diagram (`--json` for a machine-readable list) and flags a drawing that scrolls or shrinks hard on the page, with the fix in the block's data; `CHILTEPIN_CHROME` points `shots` and `pdf` at a Chromium already on the machine. The skill's review step now opens those images.
+- 80bf8f8: Prose, table cells, and callout bodies take four inline forms, and the source stays plain Markdown. `==text==` draws a highlight: a wash of the accent behind ink text. `[text]{.teal}` draws text in one of the six category hues, on its tint. `[Beta]{.pill}` draws the status chip; `.todo`, `.done`, `.current`, and `.blocked` pick its outline. `[Ctrl]{.kbd}` draws a key cap, and `:check:` draws a line icon at the size and colour of the text. The class list is closed: the renderer maps an allowed class to its own CSS class, and any other class shows the plain text. The forms render in pages, decks, the PDF, the site, and Studio. A highlight, a hue, and a chip keep their fill in print, and each reads in black and white.
+
+  The shared icon set grows from 21 to 63 line icons (arrows, plus, alert, ban, bug, rocket, sparkle, cloud, cpu, globe, mail, phone, chat, calendar, search, settings, code, terminal, git-branch, package, chart, trends, dollar, target, heart, thumbs, bulb, book, home, folder, image, play, pause, refresh, download, upload, external). The `list` and `drivers` `icon` fields take the same names, and `chiltepin block list` prints them. Some paths adapt Lucide (ISC); `THIRD_PARTY_NOTICES.md` has the notice, and the Studio bundle ships it.
+
+  Two new warnings come from `lintDocument`, so `check` and Studio both show them. `W_INLINE_UNKNOWN` names an unknown icon, an unknown span class, a span with two styles, or an unknown `icon` field, with a suggestion. `W_HIGHLIGHT_OVERUSE` fires at three highlights in one section. The lint reads prose and every block field in the new core list `INLINE_MD_FIELDS`. Heading anchors, the contents list, the site search index, and the page description keep the plain words. `review` no longer measures an inline icon as a drawing. The skill teaches the forms in `reference/writing.md`, and the showcase has a "Text styling" section.
+
+- 7617741: The page now has one heading system: your `##` and `###` headings. A block `title` becomes its figure caption, "Fig. N · title", in the frame's head row or on a caption line above the block. Figures take numbers in document order. A `lede` shows above the figure. Pages no longer show the "SECTION NN · TYPE" label; decks keep it.
+
+  Each `##` and `###` heading gets a stable id and a `#` link. The ids come from the new `headingSlug` and `headingIds` exports in `chiltepin-core`, with block ids reserved. A long page gets a table of contents with a figure list: a sticky rail at 1200px and wider, and a collapsed list on narrower screens. The page also gets a "Back to top" link.
+
+  The `meta` block takes new optional fields: `status` (draft, proposal, review, accepted, superseded, deprecated, example), `owners`, `reviewers`, `updated`, and `version`. The cover shows them in a meta row and a facts strip, with "N min read · N figures". The page emits a `description` meta tag and Open Graph tags from the subtitle.
+
+  On a phone, the gutters are 16px. A diagram never shrinks below 0.62 of its size: its stage scrolls sideways and fades at the hidden edge. Tables, the status table, and the journey scroll in their own box, so the page never scrolls sideways. Layers, risk, stories, pattern, and typescale rows stack.
+
+  In print and PDF, nothing clips. Scroll boxes print in full and wrap, and code wraps. Figures, callouts, code, and tables stay together, and a heading stays with the block after it. The SVG text halo is off on paper, so the PDF text layer no longer holds each label twice. `chiltepin pdf` uses the page's A4 size and margins, and adds a running header with the doc title, a "page X / Y" footer, and PDF bookmarks.
+
+  The error colour is now a crimson, so it is clearly different from the accent. A new warn role, built on the amber hue, colours warn callouts, warn options and cells, the SLO warn tier, and amber status chips. Status chips named by colour use the category hues. A success callout is green. Agenda owners and mitigating risks are muted chips. An error edge has a cross before its arrowhead, so it reads as an error in greyscale.
+
+  Block fixes: a long bignumber value steps down in size. Typescale draws each style at its true size and says when it scales one down. The journey curve aligns with its stage columns, reads −1…1 around a midline, and sits in a frame. A wide diagram in a gallery takes the whole row, and captions in a row align. Palette swatches have an edge ring, alpha colours show a checkerboard, and an unresolved `var()` shows a hatched swatch. Long do/don't examples and anatomy segments wrap. `felogic` with `variant: be` is labelled "Backend logic".
+
+- 7617741: Diagrams now show only what the author wrote, and they cut no label without a mark.
+  - `flow`: only an edge written `-x->` (or `kind: error`) is an error. A "no" label no longer turns an edge red or removes the success accent of its end.
+  - `c4`: a boundary encloses its own elements and nothing else. The panel is the hull of their cells, so it can be an L shape or have a hole. Auto-layout moves externals out of the boundary's span. When the author's grid splits a boundary, the geometry report names the element to move to an outer column.
+  - `usecase`: a case linked from the left sits in the left column, and a case linked from the right sits in the right column. An association ends at the near tip of its case. A line that would cross another case goes through a gap or around the shapes. The `include` and `extend` labels sit on their lines, and long case names wrap.
+  - `gitgraph`: a branch that is merged twice shows both merges. The name gutter fits the longest branch name. Commits on one lane keep their labels apart.
+  - `swimlane`: a phase without `to` ends where the next phase starts, and every phase label shows. A step can name its `phase`. With derived columns, the step then stays under that band. Step labels, notes and lane names wrap, and the boxes grow so that no text is cut.
+  - `sequence`: a note does not take a message number. An activation box that nothing extends is not drawn, and a box opened in a fragment branch closes when the branch ends. Actor names and subtitles wrap inside their heads.
+  - `state`: a guard shows in brackets (`event [guard]`). A SNAKE*CASE name breaks after `*`. The label of a self-loop sits above its arc. The transition table shows `● start`and`◉ end`, and it is in a closed `<details>`.
+  - `spans`: the children of a parent connect to one spine, so no connector crosses the text of another row.
+  - `timing`: the first marked state takes the accent when two states are marked.
+  - `saga`: past four steps, the cards become narrower so that a long saga fits the page.
+  - `erd`: a wide schema changes to top-to-bottom when that is narrower. Relations from one row spread apart, and each relation label sits on its own route.
+  - `archmap`: an area `accent` gives a hue panel. A deprecated tile shows a strikethrough and a `RETIRING` chip.
+  - `endpoint` and `eventcontract`: a long path or event name breaks only after a `/` or `.`. An auth scope keeps its case.
+
+- 7617741: The authoring skill teaches a great doc, not only a valid one, and the block catalog models the same habits.
+  - `SKILL.md` opens with the target a great doc meets: the answer and the number that forces it, claim headings, the whole mechanism first, each invented value marked once, and an ending on what happens next. Step 6 runs `chiltepin review` and then checks the doc against that target. The hub is 2,140 words, down from 2,673.
+  - The skill no longer asks for a closing "What we assumed" list. A doc ends on the open decision and its owner, open questions with who answers each, follow-up work with owners, or the escalation of a runbook. Each recipe names its ending.
+  - New guidance: the reader and their next action in step 1, what happens at each named limit and who chose it, the page contract (heading = claim, block `title` = figure caption, `lede`, `description`), `meta` status and owners, prose links (`[text](#id)`, `[text](doc#id)`), numbers with a unit, a window, and a baseline, a Rhythm section in `style-ste.md`, a Focus table, kinds grouped by hue, split and fit rules in `kit.md`, and recipes for a design doc, a runbook, and a design system.
+  - The routing table is question → family file → trap. Part-of routes to `tree`, proportions to `treemap` or a donut `chart`, and topology to `block`, never `graph`. `reference/blocks/INDEX.md` is deleted, because `chiltepin block` prints the families and the old names.
+  - The worked derivations have varied skeletons, claim headings, answer-first openings, and endings with owners. They name no invented company.
+  - `chiltepin block <type>` prints a field note on every `accent` field: it is not a colour, it marks one focus, and `red` marks the bad item. The `statustable` status `color` explains its pill styles.
+  - Catalog examples use specific nouns (no `Server`, `API`, `Start`, `Process`), mark one focus item or none, and pick no group colours. A core test runs `lintGenericLabels` over every example.
+
+- 7617741: A `block` edge takes an optional `step` (a whole number from 1 to 99). The renderer draws it as a circled numeral just before the edge label, as one unit on the edge, so the prose can walk the request by number. The terse form `3. api -> cache: read` sets the step on a `block` edge, and every older terse line keeps its meaning.
+
+  A `block` edge takes an optional `path` name (`read`, `write`). Edges with one name draw in one category hue, with their numerals and arrowheads, and the legend names each path. Error edges stay red on any path.
+
+  A `cache` now draws as one memory card with contacts along its base, and a `worker` as a card with a gear and its own `WORKER` chip. A pile of cards now means only `replicas`. Arrows end on the drawn shape of a function, a padlock and a sharded store. The kind chip of a cloud, a replica set and a sharded store sits inside the shape, and a gateway bar spans its fan-out when one client calls it twice.
+
+- 80bf8f8: `table` cells, headers and the note render inline Markdown: `**bold**`, `*em*`, `` `code` `` and links work, and raw HTML stays escaped. A number cell still prints as a number.
+
+  A column takes an optional `type`. `num` right-aligns the figures with tabular digits, thousands separators, a true minus sign and the decimals of the most precise value in the column; an optional `unit` prints with each value (`$` before it, `ms` or `%` after it). `check` draws yes · no · partial (or `true` / `false`) as ✓ ✗ – from the shared icons, and keeps the word for screen readers and copy. `bar` adds a quiet bar, scaled to the largest value in the column, beside each number.
+
+  A one-cell row `[{ v: Payments, group: true }]` is a section label across the table. The new `foot` field is one totals row under a rule; it does not repeat on each printed page.
+
+  The table is calmer: rules instead of stripes between rows, tighter rows, cells aligned to the top, headers aligned to the bottom, and links styled as in prose. On a phone, a table that scrolls keeps its first column in view, and a column never breaks a short hyphenated word such as `ap-southeast-2` or a date. The `journey` grid shares the tighter rows.
+
+  `chiltepin check` now reports a row with more cells than the table has columns. This is almost always an unquoted comma in a flow list (`[Light (one block, little prose), Centered]`), and the message says so. Three tables in the guides, and their copies in the `chiltepin init` templates, had this error and are fixed. Other new errors: a `unit` on a column that is not `num` or `bar`, a negative value in a `bar` column, and data beside a group label.
+
+  Studio: adding, deleting or moving a table column also updates the `foot` row and leaves group rows alone. `chiltepin review` no longer reads an inline icon as a drawing that shrinks.
+
+- 7617741: A terse edge or message line quoted whole for YAML (`'a -> b: "yes"'`) no longer keeps the inner quote marks in its label. One pair of matching quotes around the label is removed, so the line reads the same as the unquoted mapping form.
+- 7617741: No renderer drops text without showing it. When a label does not fit, the renderer first grows its box. If the text is still too long, the last line ends with "…", the full text goes in a `<title>`, and `check` reports a `W_GEOMETRY` warning that names the field and says how to shorten it.
+
+  Long identifiers break at their own joints: `fetch_policy_document` breaks after `_`, `com.example.checkout` after `.`, and `PaymentMethodSelection` before each capital. A number stays on the same line as its unit. All renderers measure text with one table of widths per type role.
+
+  Changes per block:
+  - `block`, `cluster` and `felogic`: cells grow until every name and `tech` fits. A gateway bar is as wide as its longest word. The kind chip no longer covers the name on cylinders, buckets, warehouses, browsers and phones. A `block` with `groups` and nodes that have no `col`/`row` now gives one warning, not one per pair of nodes.
+  - `packet`: one-bit flags (`ACK`, `SYN`) show their names. A name that does not fit gets a letter, and a key under the drawing lists the letters.
+  - `array`, `linkedlist` and `hashmap`: all cells share one width, set by the widest value, so `user:1042` shows whole. Pointer labels that would touch move to a second row.
+  - `uml`: long members wrap with a hanging indent, and classes do not overlap.
+  - `pkg`: dotted package names wrap at the dots.
+  - `frontend`: component names wrap at their capitals.
+  - `agentloop`: every tool shows, in two columns when there are more than five.
+  - `context`: segments past the window are drawn under a hatch. Neighbouring segments never share a colour.
+  - `neuralnet`: each legend swatch matches the unit glyph in the drawing.
+  - `tree`: the `issue` and `org` variants show each value with its unit and its share of the parent.
+  - `gantt`, `venn`, `cycle`, `treemap`, `fishbone`, `dfd`, `threatmodel` and `wireframe`: these blocks grow to fit their text before they cut any of it.
+
+- 7617741: New command `chiltepin review <file> [-o <dir>] [--json]`. It runs every `check` diagnostic for the file, then renders the doc in Chromium and looks at every block in light and dark at 1280 px, at 400 px, and in print. It prints one line per issue with the block number, its title, the part of the data, and the fix in the YAML. Issue kinds are `fit`, `cut`, `overlap`, `tiny`, `print`, and `check`. A cut finds text the renderer dropped, with or without "…". It writes `contact-sheet.png` (every block, numbered, light above dark, issues badged), one PNG per block and theme, the 400 px page, and `review.json`. It exits 1 on an error: a check error, cut text, or text on text. `shots` uses the same fit thresholds.
+
+  New `check` lints, from one exported `lintDocument()` that `chiltepin check` and Studio both run: `W_ORPHAN_NODE`, `W_EMPTY_GROUP`, `W_DUP_EDGE`, `W_DECISION_LABEL`, `W_ERROR_INTO_SUCCESS`, `W_IDLE_ACTOR` (`graphLints.ts`), `W_TEMPLATE_ECHO` (a doc that keeps most of a `chiltepin new` template's example text), and `W_FIT` (a drawing that scrolls past 1600 px or shrinks below 65% of its size, with a data fix per block type). `W_GENERIC_LABEL` also flags editor defaults (`New node`, `New group 3`) and group labels. The prose lint flags meta phrases ("The request names no model", "as requested", "the closing list"), and it allows the present perfect with `since` or `for` in incident and status prose.
+
+  Prose links are checked and built. `[text](#anchor)`, `[text](other-doc#anchor)`, and `[text](./other.md#anchor)` must name a doc, a block id, a heading id, or a figure anchor, else `E_DANGLING_LINK` (an error). `check` of one file resolves links against the whole docs folder. New core exports: `headingSlug` and `headingIds` (`slug.ts`), `markdownHeadings`, `docAnchors`, `proseLinks`, `resolveLinkTarget`, `lintLocalLinks`, `lintGraphs`, `lintTemplateEcho`, `lintDocument`.
+
+  `chiltepin build` makes a site that works like documentation. Prose links and ref chips point at the built pages, on the page and in the deck. Local images and `meta.logo` are copied into the output. The index and the sidebar group the docs by top folder, then by tag. The sidebar lists the current doc's headings, has a filter box over every title and heading (`search.json`), and folds into a menu under 900 px. The Doc | Slides toggle sits in a bar above the cover, so it no longer covers the tag. Nav and toggle do not print. The stylesheet and the script are written once (`assets/chiltepin.css`, `assets/chiltepin.js`). Index cards render Markdown in subtitles. `build` prints each finding at its own level and counts bytes in UTF-8.
+
+  `chiltepin --help` lists `review`, `shots`, and `audit` in its groups. `chiltepin new` pads long template names. The `audit` next step names a real command. The single-file `chiltepin skill` says that the worked derivations are repo-only. `stats` items take `better: up|down`, and the doc templates use it instead of a false `trend`.
+
+- 7617741: `usecase` diagrams get a new layout. Cases read left to right: a case an actor starts sits in the first column, and an included case, an extension or a specialised case sits one column right of the case it belongs to, level with it. The renderer builds several column plans, orders each one to keep line crossings rare, and keeps the plan that scores best on the lines as drawn. A line never passes a case, an actor or the subject's name: it bends once through a free gap of the column it crosses, and two lines never share one track.
+
+  Primary actors stand left of the subject and supporting actors right of it, with no `side` needed. An actor that joins only included or extending cases, or a system that helps a case another actor starts, stands right. A name that ends in system, service, gateway, server, api, database, platform, engine or bot draws as a dashed `«system»` box with the name inside. A person is a stick figure in the people hue, and a time actor is a clock in the compute hue.
+
+  `relations` with `kind: generalize` can join two actors: the child actor stands under its parent with a hollow triangle. Several specialisations of one case share one trunk and one triangle. An `«extend»` label shows its condition on a second line.
+
+  A new optional `focus` field names the one case the doc is about; that case takes the accent. Each case ellipse grows to hold its full name and note. The legend lists only the relation kinds in play, with what each one means.
+
+  `usecase` now reports a link, relation or `focus` that names no actor or case (`E_SCHEMA`), because the renderer dropped such a line with no message. The skill entry and the catalog example show the new fields.
+
 ## 0.16.6
 
 ### Patch Changes
